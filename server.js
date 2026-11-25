@@ -1,5 +1,5 @@
 import { createServer } from "node:http";
-import { readFile, writeFile, mkdir } from "node:fs/promises";
+import { readFile, writeFile, rename, mkdir } from "node:fs/promises";
 import { extname, join, normalize } from "node:path";
 import { randomUUID } from "node:crypto";
 
@@ -9,16 +9,27 @@ const PANGRAM = "https://text.external-api.pangram.com";
 const PUBLIC_DIR = join(import.meta.dirname, "public");
 const DATA_FILE = join(import.meta.dirname, "data", "leaves.json");
 const MAX_LEAVES = 80;
+const PENDING_TTL_MS = 30 * 60 * 1000;
 const MIME = { ".html": "text/html; charset=utf-8", ".css": "text/css", ".js": "text/javascript", ".svg": "image/svg+xml", ".ico": "image/x-icon" };
 
 let leaves = [];
 try {
   leaves = JSON.parse(await readFile(DATA_FILE, "utf8"));
-} catch {}
+} catch (err) {
+  if (err.code !== "ENOENT") throw err;
+}
 
-const saveLeaves = async () => {
-  await mkdir(join(import.meta.dirname, "data"), { recursive: true });
-  await writeFile(DATA_FILE, JSON.stringify(leaves));
+const pending = new Map();
+
+let saveQueue = Promise.resolve();
+const saveLeaves = () => {
+  saveQueue = saveQueue.catch(() => {}).then(async () => {
+    await mkdir(join(import.meta.dirname, "data"), { recursive: true });
+    const tmp = `${DATA_FILE}.${randomUUID()}.tmp`;
+    await writeFile(tmp, JSON.stringify(leaves));
+    await rename(tmp, DATA_FILE);
+  });
+  return saveQueue;
 };
 
 const send = (res, status, body) => {
@@ -65,6 +76,16 @@ const handleScore = async (req, res) => {
 
   const score = await scoreWithPangram(`I am thankful for ${cleaned}`);
   const leaf = { id: randomUUID(), gratitude: cleaned, ...score, createdAt: Date.now() };
+  for (const [id, old] of pending) if (Date.now() - old.createdAt > PENDING_TTL_MS) pending.delete(id);
+  pending.set(leaf.id, leaf);
+  send(res, 200, leaf);
+};
+
+const handleHang = async (req, res) => {
+  const { id } = await readBody(req);
+  const leaf = pending.get(id);
+  if (!leaf) return send(res, 404, { error: "That leaf blew away. Try growing it again!" });
+  pending.delete(id);
   leaves = [...leaves, leaf].slice(-MAX_LEAVES);
   await saveLeaves();
   send(res, 200, leaf);
@@ -84,6 +105,7 @@ const serveStatic = async (req, res) => {
 createServer(async (req, res) => {
   try {
     if (req.url === "/api/leaves" && req.method === "GET") return send(res, 200, leaves);
+    if (req.url === "/api/leaves" && req.method === "POST") return await handleHang(req, res);
     if (req.url === "/api/score" && req.method === "POST") return await handleScore(req, res);
     if (req.method === "GET") return await serveStatic(req, res);
     send(res, 405, { error: "Method not allowed" });

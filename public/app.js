@@ -118,10 +118,26 @@ form.addEventListener("submit", async (e) => {
   }
 });
 
-hang.addEventListener("click", () => {
+hang.addEventListener("click", async () => {
   if (!pending) return;
-  const leaf = pending;
-  const index = leaves.length;
+  hang.disabled = true;
+  showError("");
+  let leaf;
+  try {
+    const res = await fetch("/api/leaves", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ id: pending.id }),
+    });
+    leaf = await res.json();
+    if (!res.ok) throw new Error(leaf.error || "Something went wrong");
+  } catch (err) {
+    showError(err.message);
+    return;
+  } finally {
+    hang.disabled = false;
+  }
+  const index = Math.min(leaves.length, SLOTS - 1);
   const treeBox = $("tree").getBoundingClientRect();
   const { x, y } = spot(index);
   const from = bigLeaf.getBoundingClientRect();
@@ -144,7 +160,7 @@ hang.addEventListener("click", () => {
   ], { duration: 1100, easing: "cubic-bezier(.45,.05,.4,1)", fill: "forwards" })
     .finished.then(() => {
       ghost.remove();
-      leaves = [...leaves, leaf];
+      leaves = [...leaves, leaf].slice(-SLOTS);
       renderTree(leaf.id);
     });
 
