@@ -23,21 +23,27 @@
       <form id="form" autocomplete="off">
         <label for="gratitude" class="prompt">I am thankful for</label>
         <textarea id="gratitude" name="gratitude" rows="4" maxlength="100" placeholder="write something!" required></textarea>
-        <button type="submit" id="submit">Grow a leaf</button>
       </form>
 
       <div class="preview">
-        <div class="big-leaf" id="bigLeaf">
-          <svg viewBox="0 0 100 120" aria-hidden="true">
-            <path class="stem" d="M50 98 Q52 110 47 118" />
-            <path class="blade" d="M50 4 C82 22 96 56 50 100 C4 56 18 22 50 4 Z" />
-            <path class="vein" d="M50 12 L50 94 M50 40 L33 30 M50 40 L67 30 M50 58 L30 48 M50 58 L70 48 M50 76 L36 68 M50 76 L64 68" />
-          </svg>
-          <div class="leaf-text">
-            <span class="leaf-lead">I am thankful for</span>
-            <span class="leaf-body" id="leafBody">...</span>
+        <div class="camera" id="camera">
+          <p class="step-label">Shape your leaf with your hand</p>
+          <div class="cam-stage">
+            <video id="video" playsinline muted></video>
+            <canvas id="overlay"></canvas>
+            <p class="cam-hint" id="camHint">Hold your palm up to the camera, fingers spread</p>
           </div>
+          <button type="button" id="camStart" class="secondary">Turn on camera</button>
+          <button type="button" id="capture" class="secondary" disabled hidden>Capture my hand</button>
         </div>
+
+        <div class="captured" id="captured" hidden>
+          <div class="big-leaf" id="bigLeaf"></div>
+          <button type="button" class="link" id="retake">Retake hand</button>
+        </div>
+
+        <button type="submit" form="form" id="submit" disabled>Capture your hand first</button>
+
         <div class="result" id="result" hidden>
           <div class="score"><span id="scoreNum">0</span><small>% human</small></div>
           <p class="verdict" id="verdict"></p>
@@ -78,6 +84,6 @@
   </main>
 
   <footer>Humanness scores by <a href="https://www.pangram.com" target="_blank" rel="noopener">Pangram</a></footer>
-  <script src="app.js"></script>
+  <script type="module" src="app.js"></script>
 </body>
 </html>

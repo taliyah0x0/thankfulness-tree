@@ -58,25 +58,48 @@ button:active { transform: translateY(4px); box-shadow: 0 1px 0 #b9541a; }
 button:disabled { opacity: .65; cursor: progress; transform: none; }
 #submit { width: 100%; }
 
-.preview { margin-top: 24px; display: flex; flex-direction: column; align-items: center; gap: 14px; }
+.preview { margin-top: 8px; display: flex; flex-direction: column; align-items: center; gap: 14px; }
+
+button.secondary { background: #fff; color: var(--pumpkin); border: 3px solid var(--pumpkin); box-shadow: 0 5px 0 #f1cfa6; }
+button.secondary:active { box-shadow: 0 1px 0 #f1cfa6; }
+button.link { background: none; box-shadow: none; color: var(--muted); font-size: 15px; padding: 4px 8px; text-decoration: underline; }
+button.link:active { transform: none; }
+
+.camera, .captured { width: 100%; display: flex; flex-direction: column; align-items: center; gap: 12px; }
+.camera[hidden], .captured[hidden] { display: none; }
+.step-label { margin: 0; font-weight: 600; color: var(--bark); }
+.cam-stage {
+  position: relative; width: 100%; aspect-ratio: 4 / 3; border-radius: 20px; overflow: hidden;
+  background: repeating-linear-gradient(45deg, #fbead3 0 14px, #f8e2c6 14px 28px); border: 3px dashed #e3b98a;
+}
+.cam-stage video, .cam-stage canvas { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
+.cam-stage video { transform: scaleX(-1); visibility: hidden; }
+.camera.live .cam-stage video { visibility: visible; }
+.cam-hint {
+  position: absolute; left: 50%; bottom: 10px; transform: translateX(-50%); margin: 0; width: max-content; max-width: 90%;
+  padding: 6px 12px; border-radius: 99px; background: rgba(255, 250, 242, .92); font-size: 14px; font-weight: 500; text-align: center;
+}
 
 .big-leaf { position: relative; width: 240px; height: 288px; --leaf: var(--pumpkin); transition: transform .3s; }
 .big-leaf svg { position: absolute; inset: 0; width: 100%; height: 100%; overflow: visible; }
 .big-leaf .blade { fill: var(--leaf); stroke: rgba(0,0,0,.12); stroke-width: 1.5; transition: fill .4s; }
 .big-leaf .vein { fill: none; stroke: rgba(255,255,255,.18); stroke-width: 1.6; stroke-linecap: round; }
 .big-leaf .stem { fill: none; stroke: var(--bark); stroke-width: 3; stroke-linecap: round; }
+.hand-fill { fill: var(--leaf); stroke: var(--leaf); stroke-linejoin: round; transition: fill .4s, stroke .4s; }
+.hand-line { fill: none; stroke: var(--leaf); stroke-linecap: round; stroke-linejoin: round; transition: stroke .4s; }
 .big-leaf.thinking { animation: wiggle .5s ease-in-out infinite alternate; }
 
 .leaf-text {
-  position: absolute; left: 25%; right: 25%; top: 22%; bottom: 28%;
+  position: absolute;
   display: flex; flex-direction: column; align-items: center; justify-content: center;
   text-align: center; color: #fff; text-shadow: 0 1px 2px rgba(0,0,0,.25);
   font-family: "Caveat", cursive; line-height: 1.05; overflow: hidden;
 }
-.leaf-lead { font-size: 20px; opacity: .9; }
-.leaf-body { font-size: 28px; font-weight: 700; word-break: break-word; }
-.leaf-body.small { font-size: 21px; }
-.leaf-body.tiny { font-size: 17px; }
+.big-leaf { container-type: inline-size; }
+.leaf-lead { font-size: 7cqw; opacity: .9; }
+.leaf-body { font-size: 10.5cqw; font-weight: 700; word-break: break-word; }
+.leaf-body.medium { font-size: 8cqw; }
+.leaf-body.long { font-size: 6.5cqw; }
 
 .result { text-align: center; animation: pop .35s ease-out; }
 .score { font-size: 46px; font-weight: 700; color: var(--cranberry); line-height: 1; }
@@ -102,23 +125,31 @@ button:disabled { opacity: .65; cursor: progress; transform: none; }
 .leaves { position: absolute; inset: 0; }
 .tree-leaf {
   container-type: inline-size;
-  position: absolute; width: 18%; aspect-ratio: 100 / 120; padding: 0; border-radius: 0;
-  background: none; box-shadow: none; transform: translate(-50%, -50%) rotate(var(--rot));
+  position: absolute; width: 18%; aspect-ratio: 100 / 120;
+  transform: translate(-50%, -50%) rotate(var(--rot));
   transform-origin: 50% 85%; animation: sway 3.2s ease-in-out infinite alternate; animation-delay: var(--delay);
 }
-.tree-leaf:hover, .tree-leaf:focus-visible { transform: translate(-50%, -50%) rotate(var(--rot)) scale(1.5); z-index: 3; outline: none; }
-.tree-leaf:active { box-shadow: none; }
+.tree-leaf:hover, .tree-leaf:focus-within { transform: translate(-50%, -50%) rotate(var(--rot)) scale(1.5); z-index: 3; }
+.leaf-face { position: absolute; inset: 0; padding: 0; border-radius: 0; background: none; box-shadow: none; outline: none; }
+.leaf-face:hover, .leaf-face:active { transform: none; box-shadow: none; }
+.leaf-delete {
+  position: absolute; top: 0; right: 0; width: 22px; height: 22px; padding: 0; border-radius: 50%;
+  font: 700 16px/1 "Fredoka"; color: var(--cranberry); background: #fff; box-shadow: 0 2px 0 #e3b98a;
+  opacity: 0; transition: opacity .15s;
+}
+.tree-leaf:hover .leaf-delete, .tree-leaf:focus-within .leaf-delete { opacity: 1; }
+@media (hover: none) { .leaf-delete { opacity: 1; } }
 .tree-leaf svg { width: 100%; height: 100%; overflow: visible; filter: drop-shadow(0 2px 1px rgba(90, 50, 20, .25)); }
 .tree-leaf .blade { fill: var(--leaf); }
 .tree-leaf .vein { display: none; }
 .tree-leaf .stem { fill: none; stroke: var(--bark); stroke-width: 5; stroke-linecap: round; }
 .tree-leaf .words {
-  position: absolute; inset: 18% 21% 28%; display: grid; place-items: center; overflow: hidden;
+  position: absolute; display: grid; place-items: center; overflow: hidden;
   font: 700 16cqw/1 "Caveat", cursive; color: #fff; text-align: center; word-break: break-word;
   text-shadow: 0 1px 2px rgba(0,0,0,.3);
 }
-.tree-leaf .words.medium { font-size: 11.5cqw; }
-.tree-leaf .words.long { font-size: 9.5cqw; }
+.tree-leaf .words.medium { font-size: 10.5cqw; }
+.tree-leaf .words.long { font-size: 8.5cqw; }
 .tree-leaf.fresh { animation: attach .6s ease-out, sway 3.2s ease-in-out .6s infinite alternate; }
 
 .popover {

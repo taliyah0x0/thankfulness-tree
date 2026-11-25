@@ -5,6 +5,7 @@ import { randomUUID } from "node:crypto";
 
 const PORT = Number(process.env.PORT) || 3000;
 const API_KEY = process.env.PANGRAM_API_KEY;
+const ADMIN_TOKEN = process.env.ADMIN_TOKEN;
 const PANGRAM = "https://text.external-api.pangram.com";
 const PUBLIC_DIR = join(import.meta.dirname, "public");
 const DATA_FILE = join(import.meta.dirname, "data", "leaves.json");
@@ -14,7 +15,9 @@ const MIME = { ".html": "text/html; charset=utf-8", ".css": "text/css", ".js": "
 
 let leaves = [];
 try {
-  leaves = JSON.parse(await readFile(DATA_FILE, "utf8"));
+  leaves = JSON.parse(await readFile(DATA_FILE, "utf8"))
+    .slice(-MAX_LEAVES)
+    .map((leaf, i) => ({ ...leaf, slot: leaf.slot ?? i }));
 } catch (err) {
   if (err.code !== "ENOENT") throw err;
 }
@@ -33,6 +36,14 @@ const updateLeaves = (update) => {
   });
   return saveQueue;
 };
+
+const publicLeaf = ({ deleteToken, ...leaf }) => leaf;
+
+const validShape = (shape) =>
+  Array.isArray(shape?.points) &&
+  shape.points.length === 21 &&
+  shape.points.every((p) => Array.isArray(p) && p.length === 2 && p.every((n) => Number.isFinite(n) && n >= -20 && n <= 140)) &&
+  Number.isFinite(shape.w) && shape.w > 0 && shape.w <= 40;
 
 const send = (res, status, body) => {
   res.writeHead(status, { "Content-Type": "application/json" });
@@ -72,12 +83,19 @@ const scoreWithPangram = async (text) => {
 
 const handleScore = async (req, res) => {
   if (!API_KEY) return send(res, 503, { error: "The server is missing PANGRAM_API_KEY." });
-  const { gratitude } = await readBody(req);
+  const { gratitude, shape } = await readBody(req);
+  if (!validShape(shape)) return send(res, 400, { error: "Capture your hand first so we can shape your leaf!" });
   const cleaned = String(gratitude ?? "").replace(/\s+/g, " ").trim().slice(0, 100);
   if (cleaned.length < 2) return send(res, 400, { error: "Tell us what you're thankful for first!" });
 
   const score = await scoreWithPangram(`I am thankful for ${cleaned}`);
-  const leaf = { id: randomUUID(), gratitude: cleaned, ...score, createdAt: Date.now() };
+  const leaf = {
+    id: randomUUID(),
+    gratitude: cleaned,
+    ...score,
+    shape: { points: shape.points.map(([x, y]) => [Math.round(x * 10) / 10, Math.round(y * 10) / 10]), w: Math.round(shape.w * 10) / 10 },
+    createdAt: Date.now(),
+  };
   for (const [id, old] of pending) if (Date.now() - old.createdAt > PENDING_TTL_MS) pending.delete(id);
   pending.set(leaf.id, leaf);
   send(res, 200, leaf);
@@ -88,13 +106,31 @@ const handleHang = async (req, res) => {
   const leaf = pending.get(id);
   if (!leaf) return send(res, 404, { error: "That leaf blew away. Try growing it again!" });
   pending.delete(id);
+  let hung;
   try {
-    await updateLeaves((current) => [...current, leaf].slice(-MAX_LEAVES));
+    await updateLeaves((current) => {
+      const kept = current.length >= MAX_LEAVES ? current.slice(current.length - MAX_LEAVES + 1) : current;
+      const used = new Set(kept.map((l) => l.slot));
+      let slot = 0;
+      while (used.has(slot)) slot++;
+      hung = { ...leaf, slot, deleteToken: randomUUID() };
+      return [...kept, hung];
+    });
   } catch (err) {
     pending.set(id, leaf);
     throw err;
   }
-  send(res, 200, leaf);
+  send(res, 200, hung);
+};
+
+const handleDelete = async (req, res, id) => {
+  const leaf = leaves.find((l) => l.id === id);
+  if (!leaf) return send(res, 404, { error: "That leaf already fell off." });
+  const isOwner = req.headers["x-delete-token"] === leaf.deleteToken;
+  const isAdmin = Boolean(ADMIN_TOKEN) && req.headers["x-admin-token"] === ADMIN_TOKEN;
+  if (!isOwner && !isAdmin) return send(res, 403, { error: "Only the person who hung this leaf can remove it." });
+  await updateLeaves((current) => current.filter((l) => l.id !== id));
+  send(res, 200, { ok: true });
 };
 
 const serveStatic = async (req, res) => {
@@ -110,7 +146,9 @@ const serveStatic = async (req, res) => {
 
 createServer(async (req, res) => {
   try {
-    if (req.url === "/api/leaves" && req.method === "GET") return send(res, 200, leaves);
+    if (req.url === "/api/leaves" && req.method === "GET") return send(res, 200, leaves.map(publicLeaf));
+    const deleteMatch = req.method === "DELETE" && req.url.match(/^\/api\/leaves\/([\w-]+)$/);
+    if (deleteMatch) return await handleDelete(req, res, deleteMatch[1]);
     if (req.url === "/api/leaves" && req.method === "POST") return await handleHang(req, res);
     if (req.url === "/api/score" && req.method === "POST") return await handleScore(req, res);
     if (req.method === "GET") return await serveStatic(req, res);
