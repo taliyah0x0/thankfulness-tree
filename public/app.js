@@ -1,5 +1,6 @@
 import { leafSvg, textBox, normalizeHand, toPixels, drawHand } from "./leaf-shape.js";
 import { clampPosition } from "./tree-layout.js";
+import { randomIdea } from "./ideas.js";
 import { unlock, isMuted, setMuted, rustle, chime, pickUp, putDown, swish } from "./sound.js";
 
 const VISION = "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@1.2.3";
@@ -13,7 +14,6 @@ const form = $("form"), input = $("gratitude"), submit = $("submit");
 const bigLeaf = $("bigLeaf"), result = $("result"), errorEl = $("error"), hang = $("hang");
 const leavesEl = $("leaves"), popover = $("popover");
 const camera = $("camera"), video = $("video"), overlay = $("overlay"), camHint = $("camHint");
-const scanOpen = $("scanOpen"), scanner = $("scanner"), scanVideo = $("scanVideo"), scanHint = $("scanHint"), snap = $("snap"), scanCancel = $("scanCancel");
 const camStart = $("camStart"), camProgress = $("camProgress"), captured = $("captured"), retake = $("retake");
 const pileEl = $("pile"), treeEl = $("tree"), soundToggle = $("soundToggle");
 const playToggle = $("playToggle"), pip = $("pip"), pipVideo = $("pipVideo"), pipCanvas = $("pipCanvas"), handLayer = $("handLayer");
@@ -318,10 +318,8 @@ const detectLoop = () => {
 const startCamera = async (nextMode, videoEl) => {
   const id = ++startId;
   stopCamera();
-  if (nextMode !== "scan") await ensureLandmarker();
-  const next = await navigator.mediaDevices.getUserMedia({
-    video: nextMode === "scan" ? { facingMode: "environment", width: 1280, height: 960 } : { facingMode: "user", width: 640, height: 480 },
-  });
+  await ensureLandmarker();
+  const next = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "user", width: 640, height: 480 } });
   if (id !== startId) {
     next.getTracks().forEach((t) => t.stop());
     throw new DOMException("Another camera start took over", "AbortError");
@@ -331,7 +329,7 @@ const startCamera = async (nextMode, videoEl) => {
   await videoEl.play();
   mode = nextMode;
   activeVideo = videoEl;
-  if (nextMode !== "scan") detectLoop();
+  detectLoop();
 };
 
 const cameraError = (err) =>
@@ -411,8 +409,6 @@ const resetCamera = () => {
   handShape = null;
   captured.hidden = true;
   camera.hidden = false;
-  scanner.hidden = true;
-  retake.hidden = false;
   updateSubmit();
 };
 
@@ -558,6 +554,19 @@ playToggle.addEventListener("click", async () => {
   }
 });
 
+let typing = 0;
+$("idea").addEventListener("click", () => {
+  const idea = randomIdea();
+  const run = ++typing;
+  input.value = "";
+  [...idea].forEach((ch, i) => setTimeout(() => {
+    if (run !== typing) return;
+    input.value += ch;
+    input.dispatchEvent(new Event("input"));
+  }, i * 18));
+  input.focus();
+});
+
 input.addEventListener("keydown", (e) => {
   if (e.key === "Enter" && !e.shiftKey && !e.isComposing) {
     e.preventDefault();
@@ -570,9 +579,10 @@ input.addEventListener("input", () => {
   if (!pending && handShape) renderBigLeaf();
 });
 
-const growLeaf = async () => {
+form.addEventListener("submit", async (e) => {
+  e.preventDefault();
   const gratitude = input.value.trim();
-  if (!gratitude) return false;
+  if (!gratitude || !handShape) return;
   showError("");
   result.hidden = true;
   submit.disabled = true;
@@ -594,22 +604,15 @@ const growLeaf = async () => {
     $("meta").textContent = [data.headline, data.confidence && `${data.confidence} confidence`].filter(Boolean).join(" · ");
     result.hidden = false;
     hang.focus();
-    return true;
   } catch (err) {
     showError(err.message);
-    return false;
   } finally {
     bigLeaf.classList.remove("thinking");
     updateSubmit();
   }
-};
-
-form.addEventListener("submit", (e) => {
-  e.preventDefault();
-  if (handShape) growLeaf();
 });
 
-const hangLeaf = async () => {
+hang.addEventListener("click", async () => {
   if (!pending) return;
   hang.disabled = true;
   showError("");
@@ -663,93 +666,6 @@ const hangLeaf = async () => {
   input.value = "";
   bigLeaf.style.removeProperty("--leaf");
   resetCamera();
-};
-
-hang.addEventListener("click", hangLeaf);
-
-const TESSERACT = "https://cdn.jsdelivr.net/npm/tesseract.js@7.0.0/dist/tesseract.esm.min.js";
-const SCAN_HINT = "Fit the writing inside the frame";
-let ocrWorker = null;
-
-const cleanNote = (raw) => {
-  const text = raw
-    .replace(/[^\p{L}\p{N}\p{P}\s]/gu, " ")
-    .replace(/\s+/g, " ")
-    .trim()
-    .replace(/^.{0,12}?\bthankful\s*for\b[\s:,.-]*/i, "")
-    .slice(0, 100);
-  return /\p{Lu}/u.test(text) && text === text.toUpperCase() ? text.toLowerCase() : text;
-};
-
-const closeScanner = () => {
-  startId++;
-  if (mode === "scan") stopCamera();
-  scanner.hidden = true;
-  camera.hidden = Boolean(handShape);
-  captured.hidden = !handShape;
-  scanHint.textContent = SCAN_HINT;
-  snap.disabled = false;
-};
-
-const openScanner = async () => {
-  showError("");
-  pending = null;
-  result.hidden = true;
-  captured.hidden = true;
-  camera.hidden = true;
-  scanner.hidden = false;
-  scanHint.textContent = "Starting camera...";
-  try {
-    await startCamera("scan", scanVideo);
-    scanHint.textContent = SCAN_HINT;
-  } catch (err) {
-    if (err.name === "AbortError") return;
-    closeScanner();
-    showError(cameraError(err));
-  }
-};
-
-scanOpen.addEventListener("click", openScanner);
-scanCancel.addEventListener("click", closeScanner);
-
-snap.addEventListener("click", async () => {
-  const { videoWidth: w, videoHeight: h } = scanVideo;
-  if (!w) return;
-  const canvas = document.createElement("canvas");
-  const sx = w * 0.05, sy = h * 0.15, sw = w * 0.9, sh = h * 0.7;
-  const scale = Math.min(1, 1600 / sw);
-  canvas.width = sw * scale;
-  canvas.height = sh * scale;
-  const ctx = canvas.getContext("2d");
-  ctx.filter = "grayscale(1) contrast(1.6)";
-  ctx.drawImage(scanVideo, sx, sy, sw, sh, 0, 0, canvas.width, canvas.height);
-  stopCamera();
-  snap.disabled = true;
-  scanHint.textContent = "Reading your note...";
-  try {
-    if (!ocrWorker) {
-      const { default: Tesseract } = await import(TESSERACT);
-      ocrWorker = await Tesseract.createWorker("eng");
-    }
-    const text = cleanNote((await ocrWorker.recognize(canvas)).data.text);
-    if (scanner.hidden) return;
-    if (text.length < 2) {
-      scanHint.textContent = "Couldn't read that. Try bigger, darker writing.";
-      snap.disabled = false;
-      await startCamera("scan", scanVideo);
-      return;
-    }
-    input.value = text;
-    scanner.hidden = true;
-    snap.disabled = false;
-    captured.hidden = false;
-    retake.hidden = !handShape;
-    renderBigLeaf();
-    if (await growLeaf()) setTimeout(hangLeaf, 1600);
-  } catch (err) {
-    closeScanner();
-    showError(`Couldn't read the note: ${err.message}`);
-  }
 });
 
 const startFalling = () => {
