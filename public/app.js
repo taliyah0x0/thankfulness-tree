@@ -15,15 +15,21 @@ let leaves = [];
 let pending = null;
 
 const hash = (s) => [...s].reduce((h, c) => (h * 31 + c.charCodeAt(0)) >>> 0, 7);
-const colorFor = (leaf) => COLORS[hash(leaf.id) % COLORS.length];
-
-const SLOTS = 80;
-const spot = (i) => {
-  const slot = (i * 37 + 11) % SLOTS;
-  const r = Math.sqrt((slot + 0.5) / SLOTS);
-  const angle = slot * 2.39996;
-  return { x: 50 + Math.cos(angle) * r * 38, y: 36 + Math.sin(angle) * r * 21 };
+const STOPS = [[0, [139, 117, 96]], [50, [242, 177, 52]], [100, [210, 64, 42]]];
+const colorFor = ({ human }) => {
+  const upper = STOPS.findIndex(([at]) => human <= at);
+  const [[a, from], [b, to]] = upper <= 0 ? [STOPS[0], STOPS[0]] : [STOPS[upper - 1], STOPS[upper]];
+  const t = b === a ? 0 : (human - a) / (b - a);
+  return `rgb(${from.map((c, i) => Math.round(c + (to[i] - c) * t)).join(",")})`;
 };
+
+const SPOTS = [
+  [50, 25], [33, 38], [67, 38], [41, 12], [59, 12], [16, 25], [84, 25], [50, 50],
+  [25, 51], [75, 51], [33, 25], [67, 25], [8, 38], [92, 38], [42, 38], [58, 38], [16, 51],
+].map(([x, y]) => ({ x, y: y + 4 }));
+const SLOTS = SPOTS.length;
+const spot = (i) => SPOTS[i % SLOTS];
+const leafWidth = () => (matchMedia("(max-width: 820px)").matches ? 0.2 : 0.18);
 
 const verdictFor = (human) =>
   human >= 80 ? "Heartfelt and 100% homegrown" :
@@ -45,10 +51,13 @@ const renderTree = (freshId) => {
     el.style.left = x + "%";
     el.style.top = y + "%";
     el.style.setProperty("--leaf", colorFor(leaf));
-    el.style.setProperty("--rot", (hash(leaf.id) % 70) - 35 + "deg");
+    el.style.setProperty("--rot", (hash(leaf.id) % 30) - 15 + "deg");
     el.style.setProperty("--delay", -(hash(leaf.id) % 30) / 10 + "s");
     el.setAttribute("aria-label", `I am thankful for ${leaf.gratitude}. ${leaf.human}% human.`);
-    el.innerHTML = LEAF_SVG + `<span class="num">${leaf.human}</span>`;
+    el.innerHTML = LEAF_SVG + '<span class="words"></span>';
+    const words = el.querySelector(".words");
+    words.textContent = leaf.gratitude;
+    words.classList.add(leaf.gratitude.length > 50 ? "long" : leaf.gratitude.length > 22 ? "medium" : "short");
     el.addEventListener("mouseenter", () => showPopover(el, leaf));
     el.addEventListener("focus", () => showPopover(el, leaf));
     el.addEventListener("click", () => showPopover(el, leaf));
@@ -62,7 +71,7 @@ const renderTree = (freshId) => {
 
 const showPopover = (el, leaf) => {
   popover.innerHTML = `<p class="lead">I am thankful for</p><p class="body"></p>
-    <div class="bar"><span style="width:${leaf.human}%"></span></div>
+    <div class="bar"><span style="width:${leaf.human}%; background:${colorFor(leaf)}"></span></div>
     <p class="meta"><b>${leaf.human}% human</b> · ${leaf.headline ?? ""}</p>`;
   popover.querySelector(".body").textContent = leaf.gratitude;
   const wrap = popover.parentElement.getBoundingClientRect();
@@ -78,6 +87,13 @@ const showError = (message) => {
   errorEl.textContent = message;
   errorEl.hidden = !message;
 };
+
+input.addEventListener("keydown", (e) => {
+  if (e.key === "Enter" && !e.shiftKey) {
+    e.preventDefault();
+    form.requestSubmit();
+  }
+});
 
 input.addEventListener("input", () => {
   if (pending) return;
@@ -141,7 +157,7 @@ hang.addEventListener("click", async () => {
   const treeBox = $("tree").getBoundingClientRect();
   const { x, y } = spot(index);
   const from = bigLeaf.getBoundingClientRect();
-  const targetW = treeBox.width * (matchMedia("(max-width: 820px)").matches ? 0.11 : 0.09);
+  const targetW = treeBox.width * leafWidth();
   const targetH = targetW * 1.2;
   const toX = treeBox.left + (treeBox.width * x) / 100 - targetW / 2;
   const toY = treeBox.top + (treeBox.height * y) / 100 - targetH / 2;

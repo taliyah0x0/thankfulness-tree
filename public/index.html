@@ -22,7 +22,7 @@
     <section class="maker">
       <form id="form" autocomplete="off">
         <label for="gratitude" class="prompt">I am thankful for</label>
-        <input id="gratitude" name="gratitude" maxlength="180" placeholder="the smell of pie cooling on the counter" required />
+        <textarea id="gratitude" name="gratitude" rows="4" maxlength="100" placeholder="write something!" required></textarea>
         <button type="submit" id="submit">Grow a leaf</button>
       </form>
 
@@ -50,6 +50,7 @@
 
     <section class="tree-wrap">
       <p class="count" id="count">0 leaves of gratitude</p>
+      <div class="legend"><span>robotic</span><i></i><span>human</span></div>
       <div class="tree" id="tree">
         <svg viewBox="0 0 600 600" aria-hidden="true">
           <ellipse cx="300" cy="592" rx="230" ry="22" class="ground" />

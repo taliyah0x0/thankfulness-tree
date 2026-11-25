@@ -8,7 +8,7 @@ const API_KEY = process.env.PANGRAM_API_KEY;
 const PANGRAM = "https://text.external-api.pangram.com";
 const PUBLIC_DIR = join(import.meta.dirname, "public");
 const DATA_FILE = join(import.meta.dirname, "data", "leaves.json");
-const MAX_LEAVES = 80;
+const MAX_LEAVES = 17;
 const PENDING_TTL_MS = 30 * 60 * 1000;
 const MIME = { ".html": "text/html; charset=utf-8", ".css": "text/css", ".js": "text/javascript", ".svg": "image/svg+xml", ".ico": "image/x-icon" };
 
@@ -73,7 +73,7 @@ const scoreWithPangram = async (text) => {
 const handleScore = async (req, res) => {
   if (!API_KEY) return send(res, 503, { error: "The server is missing PANGRAM_API_KEY." });
   const { gratitude } = await readBody(req);
-  const cleaned = String(gratitude ?? "").replace(/\s+/g, " ").trim().slice(0, 180);
+  const cleaned = String(gratitude ?? "").replace(/\s+/g, " ").trim().slice(0, 100);
   if (cleaned.length < 2) return send(res, 400, { error: "Tell us what you're thankful for first!" });
 
   const score = await scoreWithPangram(`I am thankful for ${cleaned}`);
