@@ -10,12 +10,21 @@
   <link rel="stylesheet" href="style.css" />
 </head>
 <body>
+  <div class="sky" aria-hidden="true"><div class="stars"></div><div class="orb"></div></div>
   <div class="falling" aria-hidden="true"></div>
 
   <header>
+    <div class="toolbar">
+      <div class="sky-switch" role="group" aria-label="Sky">
+        <button type="button" data-sky-option="day">Day</button>
+        <button type="button" data-sky-option="sunset">Sunset</button>
+        <button type="button" data-sky-option="night">Night</button>
+      </div>
+      <button type="button" id="soundToggle" class="secondary small">Sound on</button>
+    </div>
     <p class="eyebrow">Happy Thanksgiving</p>
     <h1>The Thankfulness Tree</h1>
-    <p class="sub">Write what you're grateful for. Pangram checks it sounds like a real human wrote it, then your leaf joins the tree.</p>
+    <p class="sub">Write what you're grateful for. Pangram checks it sounds like a real human wrote it, then your leaf joins the tree. Drag leaves around, wiggle your cursor to rustle it, or blow into your mic for a breeze.</p>
   </header>
 
   <main>
@@ -57,11 +66,14 @@
     <section class="tree-wrap">
       <p class="count" id="count">0 leaves of gratitude</p>
       <div class="legend"><span>robotic</span><i></i><span>human</span></div>
-      <div class="play-bar"><button type="button" id="playToggle" class="secondary small">Play with the tree</button></div>
+      <div class="play-bar">
+        <button type="button" id="playToggle" class="secondary small">Play with the tree</button>
+        <button type="button" id="blowToggle" class="secondary small">Blow on the tree<span class="mic-meter"><i id="micLevel"></i></span></button>
+      </div>
       <div class="pip" id="pip" hidden>
         <video id="pipVideo" playsinline muted></video>
         <canvas id="pipCanvas"></canvas>
-        <p>Wave fast to shake the tree. Pinch a leaf to pick it up.</p>
+        <p>Wave fast to shake the tree. Pinch a leaf to pick it up, and open your fingers to place it.</p>
       </div>
       <div class="tree" id="tree">
         <svg viewBox="0 0 600 600" aria-hidden="true">
@@ -82,6 +94,7 @@
           <path class="trunk" d="M255 600 C276 520 282 430 293 300 Q300 290 307 300 C318 430 324 520 345 600 Z" />
           <path class="bark" d="M292 560 C296 500 293 450 296 400 M308 520 C305 470 309 430 306 380" />
         </svg>
+        <div class="pile" id="pile"></div>
         <div class="leaves" id="leaves"></div>
         <canvas class="hand-layer" id="handLayer"></canvas>
         <p class="empty" id="empty">The tree is waiting for its first leaf.</p>

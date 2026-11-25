@@ -1,13 +1,11 @@
 import { leafSvg, textBox, normalizeHand, toPixels, drawHand } from "./leaf-shape.js";
+import { clampPosition } from "./tree-layout.js";
+import { audioContext, unlock, isMuted, setMuted, rustle, chime, pickUp, putDown, swish, setWind } from "./sound.js";
 
 const VISION = "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@1.2.3";
 const HAND_MODEL = "https://storage.googleapis.com/mediapipe-models/hand_landmarker/hand_landmarker/float16/1/hand_landmarker.task";
 const FALL_COLORS = ["#e8742b", "#b8322f", "#f2b134", "#d2552b", "#a8572a", "#e39b2d"];
 const STOPS = [[0, [139, 117, 96]], [50, [242, 177, 52]], [100, [210, 64, 42]]];
-const SPOTS = [
-  [50, 25], [33, 38], [67, 38], [41, 12], [59, 12], [16, 25], [84, 25], [50, 50],
-  [25, 51], [75, 51], [33, 25], [67, 25], [8, 38], [92, 38], [42, 38], [58, 38], [16, 51],
-].map(([x, y]) => ({ x, y: y + 4 }));
 const TOKENS_KEY = "thankful-leaf-tokens";
 
 const $ = (id) => document.getElementById(id);
@@ -16,6 +14,7 @@ const bigLeaf = $("bigLeaf"), result = $("result"), errorEl = $("error"), hang =
 const leavesEl = $("leaves"), popover = $("popover");
 const camera = $("camera"), video = $("video"), overlay = $("overlay"), camHint = $("camHint");
 const camStart = $("camStart"), camProgress = $("camProgress"), captured = $("captured"), retake = $("retake");
+const pileEl = $("pile"), treeEl = $("tree"), blowToggle = $("blowToggle"), micLevel = $("micLevel"), soundToggle = $("soundToggle");
 const playToggle = $("playToggle"), pip = $("pip"), pipVideo = $("pipVideo"), pipCanvas = $("pipCanvas"), handLayer = $("handLayer");
 
 let leaves = [];
@@ -23,6 +22,11 @@ let pending = null;
 let handShape = null;
 let stream = null;
 let landmarker = null;
+let held = null;
+let drag = null;
+let suppressClick = false;
+let lastRustle = 0;
+let rendered = new Map();
 
 const params = new URLSearchParams(location.search);
 if (params.get("admin")) sessionStorage.setItem("thankful-admin", params.get("admin"));
@@ -70,47 +74,168 @@ const updateSubmit = () => {
   submit.textContent = "Grow a leaf";
 };
 
+const pileSpot = (leaf, index) => {
+  const h = hash(leaf.id);
+  return { x: 14 + (h % 72), y: 95 - ((h >> 7) % 4) - Math.floor(index / 10) * 2.5, rot: ((h >> 3) % 160) - 80 };
+};
+
+const hoverRustle = (el) => {
+  if (held) return;
+  const now = performance.now();
+  if (now - lastRustle > 90) rustle(0.35, 0.22);
+  lastRustle = now;
+  el.classList.remove("wiggle");
+  void el.offsetWidth;
+  el.classList.add("wiggle");
+};
+
+const buildLeaf = (leaf, onPile) => {
+  const el = document.createElement("div");
+  el.className = onPile ? "pile-leaf" : "tree-leaf";
+  el.dataset.id = leaf.id;
+  el.style.setProperty("--leaf", colorFor(leaf));
+
+  const face = document.createElement("button");
+  face.type = "button";
+  face.className = "leaf-face";
+  face.setAttribute("aria-label", `I am thankful for ${leaf.gratitude}. ${leaf.human}% human.`);
+  face.innerHTML = leafSvg(leaf.shape) + '<span class="words"></span>';
+  const words = face.querySelector(".words");
+  words.textContent = leaf.gratitude;
+  words.classList.add(sizeClass(leaf.gratitude));
+  placeText(words, leaf.shape);
+  face.addEventListener("mouseenter", () => {
+    hoverRustle(el);
+    if (!held) showPopover(el, leaf);
+  });
+  face.addEventListener("focus", () => showPopover(el, leaf));
+  face.addEventListener("click", () => {
+    if (suppressClick) return void (suppressClick = false);
+    showPopover(el, leaf);
+  });
+  face.addEventListener("mouseleave", hidePopover);
+  face.addEventListener("blur", hidePopover);
+  if (!onPile) {
+    face.addEventListener("pointerdown", (e) => {
+      if (e.button !== 0 || held) return;
+      drag = { el, leaf, x: e.clientX, y: e.clientY, moved: false };
+      face.setPointerCapture(e.pointerId);
+    });
+    face.addEventListener("pointermove", (e) => {
+      if (drag?.el !== el) return;
+      if (!drag.moved && Math.hypot(e.clientX - drag.x, e.clientY - drag.y) < 6) return;
+      if (!drag.moved) {
+        drag.moved = true;
+        liftLeaf(el, leaf);
+      }
+      const box = treeEl.getBoundingClientRect();
+      moveHeld(((e.clientX - box.left) / box.width) * 100, ((e.clientY - box.top) / box.height) * 100);
+    });
+    const endDrag = () => {
+      if (drag?.el !== el) return;
+      if (drag.moved) {
+        suppressClick = true;
+        dropHeld();
+      }
+      drag = null;
+    };
+    face.addEventListener("pointerup", endDrag);
+    face.addEventListener("pointercancel", endDrag);
+  }
+  el.append(face);
+
+  if (tokens[leaf.id] || adminToken) {
+    const del = document.createElement("button");
+    del.type = "button";
+    del.className = "leaf-delete";
+    del.textContent = "×";
+    del.setAttribute("aria-label", `Remove the leaf "${leaf.gratitude}"`);
+    del.addEventListener("click", () => deleteLeaf(leaf));
+    el.append(del);
+  }
+  return el;
+};
+
 const renderTree = (freshId) => {
-  leavesEl.replaceChildren(...leaves.map((leaf) => {
-    const { x, y } = SPOTS[leaf.slot % SPOTS.length];
-    const el = document.createElement("div");
-    el.className = "tree-leaf" + (leaf.id === freshId ? " fresh" : "");
-    el.dataset.id = leaf.id;
-    el.style.left = x + "%";
-    el.style.top = y + "%";
-    el.style.setProperty("--leaf", colorFor(leaf));
+  const onTree = leaves.filter((l) => !l.fallen);
+  const pile = leaves.filter((l) => l.fallen).sort((a, b) => a.fallenAt - b.fallenAt);
+
+  leavesEl.replaceChildren(...onTree.map((leaf) => {
+    const el = buildLeaf(leaf, false);
+    if (leaf.id === freshId) el.classList.add("fresh");
+    el.style.left = leaf.x + "%";
+    el.style.top = leaf.y + "%";
     el.style.setProperty("--rot", (hash(leaf.id) % 30) - 15 + "deg");
     el.style.setProperty("--delay", -(hash(leaf.id) % 30) / 10 + "s");
+    el.style.setProperty("--phase", (hash(leaf.id) % 628) / 100);
+    return el;
+  }));
 
-    const face = document.createElement("button");
-    face.type = "button";
-    face.className = "leaf-face";
-    face.setAttribute("aria-label", `I am thankful for ${leaf.gratitude}. ${leaf.human}% human.`);
-    face.innerHTML = leafSvg(leaf.shape) + '<span class="words"></span>';
-    const words = face.querySelector(".words");
-    words.textContent = leaf.gratitude;
-    words.classList.add(sizeClass(leaf.gratitude));
-    placeText(words, leaf.shape);
-    face.addEventListener("mouseenter", () => showPopover(el, leaf));
-    face.addEventListener("focus", () => showPopover(el, leaf));
-    face.addEventListener("click", () => showPopover(el, leaf));
-    face.addEventListener("mouseleave", hidePopover);
-    face.addEventListener("blur", hidePopover);
-    el.append(face);
-
-    if (tokens[leaf.id] || adminToken) {
-      const del = document.createElement("button");
-      del.type = "button";
-      del.className = "leaf-delete";
-      del.textContent = "×";
-      del.setAttribute("aria-label", `Remove the leaf "${leaf.gratitude}"`);
-      del.addEventListener("click", () => deleteLeaf(leaf));
-      el.append(del);
+  let tumbled = false;
+  pileEl.replaceChildren(...pile.map((leaf, i) => {
+    const el = buildLeaf(leaf, true);
+    const spot = pileSpot(leaf, i);
+    const before = rendered.get(leaf.id);
+    el.style.setProperty("--rot", spot.rot + "deg");
+    if (before && !before.fallen) {
+      tumbled = true;
+      el.style.left = before.x + "%";
+      el.style.top = before.y + "%";
+      el.classList.add("tumbling");
+      requestAnimationFrame(() => requestAnimationFrame(() => {
+        el.style.left = spot.x + "%";
+        el.style.top = spot.y + "%";
+      }));
+      el.addEventListener("transitionend", () => el.classList.remove("tumbling"), { once: true });
+    } else {
+      el.style.left = spot.x + "%";
+      el.style.top = spot.y + "%";
     }
     return el;
   }));
-  $("count").textContent = `${leaves.length} ${leaves.length === 1 ? "leaf" : "leaves"} of gratitude`;
+  if (tumbled) swish();
+
+  rendered = new Map(leaves.map((l) => [l.id, { x: l.x, y: l.y, fallen: Boolean(l.fallen) }]));
+  $("count").textContent = `${onTree.length} ${onTree.length === 1 ? "leaf" : "leaves"} of gratitude` + (pile.length ? ` · ${pile.length} in the pile` : "");
   $("empty").hidden = leaves.length > 0;
+};
+
+const liftLeaf = (el, leaf) => {
+  hidePopover();
+  held = { el, leaf, x: leaf.x, y: leaf.y };
+  el.classList.add("held");
+  pickUp();
+};
+
+const moveHeld = (x, y) => {
+  if (!held) return;
+  held.x = x;
+  held.y = y;
+  held.el.style.left = x + "%";
+  held.el.style.top = y + "%";
+};
+
+const dropHeld = async () => {
+  if (!held) return;
+  const { el, leaf } = held;
+  const spot = clampPosition(held.x, held.y);
+  held = null;
+  el.classList.remove("held");
+  el.classList.add("returning");
+  el.style.left = spot.x + "%";
+  el.style.top = spot.y + "%";
+  setTimeout(() => el.classList.remove("returning"), 700);
+  leaf.x = spot.x;
+  leaf.y = spot.y;
+  rendered.set(leaf.id, { ...spot, fallen: false });
+  putDown();
+  setTimeout(() => chime(leaf.human), 120);
+  const res = await fetch(`/api/leaves/${leaf.id}/position`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(spot),
+  }).catch(() => null);
+  if (!res?.ok) loadLeaves().catch(() => {});
 };
 
 const loadLeaves = async (freshId) => {
@@ -298,7 +423,6 @@ retake.addEventListener("click", () => {
 
 const PINCH_ON = 0.3, PINCH_OFF = 0.45;
 let pinching = false;
-let held = null;
 let shakeTrail = [];
 let lastShake = 0;
 
@@ -307,34 +431,20 @@ const toTree = (p, W, H) => {
   return [clamp((1 - p.x - 0.15) / 0.7) * W, clamp((p.y - 0.1) / 0.7) * H];
 };
 
-const releaseLeaf = () => {
-  if (!held) return;
-  const { el, leaf } = held;
-  const { x, y } = SPOTS[leaf.slot % SPOTS.length];
-  el.classList.remove("held");
-  el.classList.add("returning");
-  el.style.left = x + "%";
-  el.style.top = y + "%";
-  setTimeout(() => el.classList.remove("returning"), 700);
-  held = null;
-};
-
 const grabLeaf = ([cx, cy], W, H) => {
+  if (held) return;
   let best = null;
   for (const el of leavesEl.querySelectorAll(".tree-leaf")) {
     const leaf = leaves.find((l) => l.id === el.dataset.id);
-    const { x, y } = SPOTS[leaf.slot % SPOTS.length];
-    const d = Math.hypot((x / 100) * W - cx, (y / 100) * H - cy);
+    const d = Math.hypot((leaf.x / 100) * W - cx, (leaf.y / 100) * H - cy);
     if (d < W * 0.1 && (!best || d < best.d)) best = { el, leaf, d };
   }
-  if (!best) return;
-  hidePopover();
-  held = best;
-  best.el.classList.add("held");
+  if (best) liftLeaf(best.el, best.leaf);
 };
 
 const shakeTree = () => {
-  const tree = $("tree");
+  const tree = treeEl;
+  rustle(1, 0.9);
   tree.classList.remove("shaking");
   void tree.offsetWidth;
   tree.classList.add("shaking");
@@ -369,7 +479,6 @@ const detectShake = (x, now, W) => {
 };
 
 handlers.play = (lm, now) => {
-  const treeEl = $("tree");
   const W = treeEl.clientWidth, H = treeEl.clientHeight;
   handLayer.width = W;
   handLayer.height = H;
@@ -379,7 +488,7 @@ handlers.play = (lm, now) => {
   pipCanvas.height = vh;
   const pctx = pipCanvas.getContext("2d");
   if (!lm) {
-    releaseLeaf();
+    if (pinching) dropHeld();
     pinching = false;
     return;
   }
@@ -393,11 +502,10 @@ handlers.play = (lm, now) => {
     grabLeaf(cursor, W, H);
   } else if (pinching && ratio > PINCH_OFF) {
     pinching = false;
-    releaseLeaf();
+    dropHeld();
   }
-  if (held) {
-    held.el.style.left = (cursor[0] / W) * 100 + "%";
-    held.el.style.top = (cursor[1] / H) * 100 + "%";
+  if (pinching && held) {
+    moveHeld((cursor[0] / W) * 100, (cursor[1] / H) * 100);
   } else if (!pinching) {
     detectShake(toTree(lm[9], W, H)[0], now, W);
   }
@@ -420,7 +528,7 @@ handlers.play = (lm, now) => {
 };
 
 onStop.play = () => {
-  releaseLeaf();
+  if (pinching) dropHeld();
   pinching = false;
   shakeTrail = [];
   handLayer.getContext("2d").clearRect(0, 0, handLayer.width, handLayer.height);
@@ -515,7 +623,7 @@ hang.addEventListener("click", async () => {
   saveTokens();
 
   const treeBox = $("tree").getBoundingClientRect();
-  const { x, y } = SPOTS[leaf.slot % SPOTS.length];
+  const { x, y } = leaf;
   const from = bigLeaf.getBoundingClientRect();
   const targetW = treeBox.width * leafWidth();
   const targetH = targetW * 1.2;
@@ -536,6 +644,8 @@ hang.addEventListener("click", async () => {
   ], { duration: 1100, easing: "cubic-bezier(.45,.05,.4,1)", fill: "forwards" })
     .finished.then(() => {
       ghost.remove();
+      chime(leaf.human);
+      rustle(0.4, 0.25);
       loadLeaves(leaf.id);
     });
 
@@ -561,4 +671,105 @@ const startFalling = () => {
 startFalling();
 updateSubmit();
 loadLeaves().catch(() => renderTree());
-setInterval(() => { if (popover.hidden && mode !== "play") loadLeaves().catch(() => {}); }, 20000);
+setInterval(() => { if (popover.hidden && mode !== "play" && !held && !drag) loadLeaves().catch(() => {}); }, 20000);
+
+treeEl.addEventListener("pointermove", (e) => {
+  if (e.pointerType !== "mouse" || held || drag) return;
+  const box = treeEl.getBoundingClientRect();
+  detectShake(e.clientX - box.left, performance.now(), box.width);
+});
+
+let micStream = null;
+let breeze = 0;
+let gustRunning = false;
+
+const gustLoop = () => {
+  const now = performance.now();
+  const speed = 3 + breeze * 9;
+  for (const el of leavesEl.children) {
+    el.style.setProperty("--gust", Math.sin((now / 1000) * speed + Number(el.style.getPropertyValue("--phase"))) * breeze * 30 + "deg");
+  }
+  setWind(breeze);
+  if (breeze > 0.35 && now - lastRustle > 260) {
+    rustle(breeze * 0.7, 0.25);
+    lastRustle = now;
+  }
+  if (micStream || breeze > 0.005) return requestAnimationFrame(gustLoop);
+  gustRunning = false;
+  for (const el of leavesEl.children) el.style.removeProperty("--gust");
+};
+
+const startMic = async () => {
+  unlock();
+  micStream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false } });
+  const actx = audioContext();
+  const analyser = actx.createAnalyser();
+  analyser.fftSize = 1024;
+  actx.createMediaStreamSource(micStream).connect(analyser);
+  const samples = new Float32Array(analyser.fftSize);
+  const listen = () => {
+    if (!micStream) {
+      breeze = 0;
+      micLevel.style.width = "0%";
+      return;
+    }
+    analyser.getFloatTimeDomainData(samples);
+    const rms = Math.sqrt(samples.reduce((sum, s) => sum + s * s, 0) / samples.length);
+    const target = Math.min(Math.max((rms - 0.03) / 0.12, 0), 1);
+    breeze += (target - breeze) * (target > breeze ? 0.3 : 0.04);
+    micLevel.style.width = breeze * 100 + "%";
+    requestAnimationFrame(listen);
+  };
+  listen();
+  if (!gustRunning) {
+    gustRunning = true;
+    gustLoop();
+  }
+};
+
+blowToggle.addEventListener("click", async () => {
+  if (micStream) {
+    micStream.getTracks().forEach((t) => t.stop());
+    micStream = null;
+    blowToggle.firstChild.textContent = "Blow on the tree";
+    return;
+  }
+  try {
+    await startMic();
+    blowToggle.firstChild.textContent = "Stop blowing";
+  } catch (err) {
+    micStream = null;
+    alert(err.name === "NotAllowedError" ? "We need your microphone to feel the breeze." : `Microphone trouble: ${err.message}`);
+  }
+});
+
+const SKY_KEY = "thankful-sky";
+const setSky = (sky) => {
+  document.body.dataset.sky = sky;
+  localStorage.setItem(SKY_KEY, sky);
+  for (const b of document.querySelectorAll("[data-sky-option]")) b.setAttribute("aria-pressed", String(b.dataset.skyOption === sky));
+};
+for (const b of document.querySelectorAll("[data-sky-option]")) b.addEventListener("click", () => setSky(b.dataset.skyOption));
+setSky(localStorage.getItem(SKY_KEY) || "sunset");
+
+const stars = document.querySelector(".stars");
+for (let i = 0; i < 60; i++) {
+  const s = document.createElement("i");
+  s.style.left = Math.random() * 100 + "%";
+  s.style.top = Math.random() * 60 + "%";
+  s.style.animationDelay = -Math.random() * 4 + "s";
+  s.style.setProperty("--size", 1 + Math.random() * 2.2 + "px");
+  stars.append(s);
+}
+
+const renderSoundToggle = () => {
+  soundToggle.textContent = isMuted() ? "Sound off" : "Sound on";
+  soundToggle.setAttribute("aria-pressed", String(!isMuted()));
+};
+soundToggle.addEventListener("click", () => {
+  setMuted(!isMuted());
+  renderSoundToggle();
+});
+renderSoundToggle();
+document.addEventListener("pointerdown", unlock);
+document.addEventListener("keydown", unlock);

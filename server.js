@@ -2,6 +2,7 @@ import { createServer } from "node:http";
 import { readFile, writeFile, rename, mkdir } from "node:fs/promises";
 import { extname, join, normalize } from "node:path";
 import { randomUUID } from "node:crypto";
+import { MAX_TREE, SPOTS, clampPosition, pickSpot } from "./public/tree-layout.js";
 
 const PORT = Number(process.env.PORT) || 3000;
 const API_KEY = process.env.PANGRAM_API_KEY;
@@ -9,15 +10,24 @@ const ADMIN_TOKEN = process.env.ADMIN_TOKEN;
 const PANGRAM = "https://text.external-api.pangram.com";
 const PUBLIC_DIR = join(import.meta.dirname, "public");
 const DATA_FILE = join(import.meta.dirname, "data", "leaves.json");
-const MAX_LEAVES = 17;
+const MAX_PILE = 30;
 const PENDING_TTL_MS = 30 * 60 * 1000;
 const MIME = { ".html": "text/html; charset=utf-8", ".css": "text/css", ".js": "text/javascript", ".svg": "image/svg+xml", ".ico": "image/x-icon" };
 
+const settle = (list) => {
+  const onTree = list.filter((l) => !l.fallen);
+  const evicted = new Set(onTree.slice(0, Math.max(0, onTree.length - MAX_TREE)).map((l) => l.id));
+  const settled = list.map((l) => (evicted.has(l.id) ? { ...l, fallen: true, fallenAt: Date.now() } : l));
+  const kept = new Set(settled.filter((l) => l.fallen).sort((a, b) => a.fallenAt - b.fallenAt).slice(-MAX_PILE).map((l) => l.id));
+  return settled.filter((l) => !l.fallen || kept.has(l.id));
+};
+
 let leaves = [];
 try {
-  leaves = JSON.parse(await readFile(DATA_FILE, "utf8"))
-    .slice(-MAX_LEAVES)
-    .map((leaf, i) => ({ ...leaf, slot: leaf.slot ?? i }));
+  leaves = settle(JSON.parse(await readFile(DATA_FILE, "utf8")).map(({ slot, ...leaf }, i) => ({
+    ...leaf,
+    ...(leaf.x == null && SPOTS[(slot ?? i) % SPOTS.length]),
+  })));
 } catch (err) {
   if (err.code !== "ENOENT") throw err;
 }
@@ -109,18 +119,27 @@ const handleHang = async (req, res) => {
   let hung;
   try {
     await updateLeaves((current) => {
-      const kept = current.length >= MAX_LEAVES ? current.slice(current.length - MAX_LEAVES + 1) : current;
-      const used = new Set(kept.map((l) => l.slot));
-      let slot = 0;
-      while (used.has(slot)) slot++;
-      hung = { ...leaf, slot, deleteToken: randomUUID() };
-      return [...kept, hung];
+      const onTree = current.filter((l) => !l.fallen);
+      const oldest = onTree.length >= MAX_TREE ? onTree[0].id : null;
+      const next = current.map((l) => (l.id === oldest ? { ...l, fallen: true, fallenAt: Date.now() } : l));
+      hung = { ...leaf, ...pickSpot(next.filter((l) => !l.fallen)), deleteToken: randomUUID() };
+      return settle([...next, hung]);
     });
   } catch (err) {
     pending.set(id, leaf);
     throw err;
   }
   send(res, 200, hung);
+};
+
+const handleMove = async (req, res, id) => {
+  const { x, y } = await readBody(req);
+  if (!Number.isFinite(x) || !Number.isFinite(y)) return send(res, 400, { error: "Where should the leaf go?" });
+  const leaf = leaves.find((l) => l.id === id && !l.fallen);
+  if (!leaf) return send(res, 404, { error: "That leaf isn't on the tree anymore." });
+  const position = clampPosition(x, y);
+  await updateLeaves((current) => current.map((l) => (l.id === id ? { ...l, ...position } : l)));
+  send(res, 200, position);
 };
 
 const handleDelete = async (req, res, id) => {
@@ -149,6 +168,8 @@ createServer(async (req, res) => {
     if (req.url === "/api/leaves" && req.method === "GET") return send(res, 200, leaves.map(publicLeaf));
     const deleteMatch = req.method === "DELETE" && req.url.match(/^\/api\/leaves\/([\w-]+)$/);
     if (deleteMatch) return await handleDelete(req, res, deleteMatch[1]);
+    const moveMatch = req.method === "POST" && req.url.match(/^\/api\/leaves\/([\w-]+)\/position$/);
+    if (moveMatch) return await handleMove(req, res, moveMatch[1]);
     if (req.url === "/api/leaves" && req.method === "POST") return await handleHang(req, res);
     if (req.url === "/api/score" && req.method === "POST") return await handleScore(req, res);
     if (req.method === "GET") return await serveStatic(req, res);
