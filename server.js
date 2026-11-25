@@ -126,7 +126,7 @@ const handleHang = async (req, res) => {
 const handleDelete = async (req, res, id) => {
   const leaf = leaves.find((l) => l.id === id);
   if (!leaf) return send(res, 404, { error: "That leaf already fell off." });
-  const isOwner = req.headers["x-delete-token"] === leaf.deleteToken;
+  const isOwner = Boolean(leaf.deleteToken) && req.headers["x-delete-token"] === leaf.deleteToken;
   const isAdmin = Boolean(ADMIN_TOKEN) && req.headers["x-admin-token"] === ADMIN_TOKEN;
   if (!isOwner && !isAdmin) return send(res, 403, { error: "Only the person who hung this leaf can remove it." });
   await updateLeaves((current) => current.filter((l) => l.id !== id));
