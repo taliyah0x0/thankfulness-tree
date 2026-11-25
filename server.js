@@ -22,12 +22,14 @@ try {
 const pending = new Map();
 
 let saveQueue = Promise.resolve();
-const saveLeaves = () => {
+const updateLeaves = (update) => {
   saveQueue = saveQueue.catch(() => {}).then(async () => {
+    const next = update(leaves);
     await mkdir(join(import.meta.dirname, "data"), { recursive: true });
     const tmp = `${DATA_FILE}.${randomUUID()}.tmp`;
-    await writeFile(tmp, JSON.stringify(leaves));
+    await writeFile(tmp, JSON.stringify(next));
     await rename(tmp, DATA_FILE);
+    leaves = next;
   });
   return saveQueue;
 };
@@ -86,11 +88,9 @@ const handleHang = async (req, res) => {
   const leaf = pending.get(id);
   if (!leaf) return send(res, 404, { error: "That leaf blew away. Try growing it again!" });
   pending.delete(id);
-  leaves = [...leaves, leaf].slice(-MAX_LEAVES);
   try {
-    await saveLeaves();
+    await updateLeaves((current) => [...current, leaf].slice(-MAX_LEAVES));
   } catch (err) {
-    leaves = leaves.filter((l) => l.id !== id);
     pending.set(id, leaf);
     throw err;
   }
