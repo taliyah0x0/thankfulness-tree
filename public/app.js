@@ -67,6 +67,7 @@ const renderBigLeaf = () => {
 const updateSubmit = () => {
   submit.hidden = !handShape;
   submit.disabled = !input.value.trim();
+  submit.textContent = "Grow a leaf";
 };
 
 const renderTree = (freshId) => {
@@ -160,6 +161,7 @@ const handlers = {};
 const onStop = {};
 let mode = null;
 let activeVideo = null;
+let startId = 0;
 
 const ensureLandmarker = async () => {
   if (landmarker) return;
@@ -190,9 +192,15 @@ const detectLoop = () => {
 };
 
 const startCamera = async (nextMode, videoEl) => {
+  const id = ++startId;
   stopCamera();
   await ensureLandmarker();
-  stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "user", width: 640, height: 480 } });
+  const next = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "user", width: 640, height: 480 } });
+  if (id !== startId) {
+    next.getTracks().forEach((t) => t.stop());
+    throw new DOMException("Another camera start took over", "AbortError");
+  }
+  stream = next;
   videoEl.srcObject = stream;
   await videoEl.play();
   mode = nextMode;
@@ -264,6 +272,7 @@ camStart.addEventListener("click", async () => {
     camera.classList.add("live");
     camStart.hidden = true;
   } catch (err) {
+    if (err.name === "AbortError") return;
     stopCamera();
     showError(cameraError(err));
   } finally {
@@ -428,6 +437,9 @@ playToggle.addEventListener("click", async () => {
     await startCamera("play", pipVideo);
     playToggle.textContent = "Stop playing";
   } catch (err) {
+    pip.hidden = true;
+    playToggle.textContent = "Play with the tree";
+    if (err.name === "AbortError") return;
     stopCamera();
     alert(cameraError(err));
   } finally {
