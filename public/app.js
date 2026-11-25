@@ -2,6 +2,7 @@ import { leafSvg, textBox, normalizeHand, toPixels, drawHand } from "./leaf-shap
 import { MAX_TREE, clampPosition, pickSpot } from "./tree-layout.js";
 import { randomIdea } from "./ideas.js";
 import { unlock, isMuted, setMuted, rustle, chime, pickUp, putDown, swish } from "./sound.js";
+import { connect, makeCode, cleanCode, CODE_LENGTH } from "./room.js";
 
 const VISION = "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@1.2.3";
 const HAND_MODEL = "https://storage.googleapis.com/mediapipe-models/hand_landmarker/hand_landmarker/float16/1/hand_landmarker.task";
@@ -27,10 +28,74 @@ let drag = null;
 let suppressClick = false;
 let lastRustle = 0;
 let rendered = new Map();
+let room = null;
+let renderDeferred = false;
+const removed = new Set();
+const landing = new Set();
+const remoteHeld = new Map();
+const remoteHands = new Map();
 
 const MAX_PILE = 30;
+const MAX_LEAVES = MAX_TREE + MAX_PILE;
+const HELD_TIMEOUT = 1500;
+const PEER_COLORS = ["#2f7d6d", "#5a5fc4", "#c2408a", "#2d7fb8", "#7a8f1f", "#9b4fd1"];
 
 const hash = (s) => [...s].reduce((h, c) => (h * 31 + c.charCodeAt(0)) >>> 0, 7);
+const peerColor = (peerId) => PEER_COLORS[hash(peerId) % PEER_COLORS.length];
+
+const num = (n, lo, hi) => Number.isFinite(n) && n >= lo && n <= hi;
+const str = (s, max) => typeof s === "string" && s.length <= max;
+const validShape = (shape) =>
+  Array.isArray(shape?.points) &&
+  shape.points.length === 21 &&
+  shape.points.every((p) => Array.isArray(p) && p.length === 2 && p.every((n) => num(n, -20, 140))) &&
+  num(shape.w, 0.01, 40);
+
+// Leaves from other people arrive over the network, so only accept well-formed ones.
+const cleanLeaf = (l) => {
+  if (!l || !str(l.id, 64) || !l.id || !str(l.gratitude, 100) || !num(l.human, 0, 100) || !validShape(l.shape)) return null;
+  if (!num(l.createdAt, 0, 1e14) || !num(l.v, 0, 1e14) || !str(l.by, 64)) return null;
+  const spot = clampPosition(Number(l.x) || 50, Number(l.y) || 30);
+  return {
+    id: l.id,
+    gratitude: l.gratitude,
+    human: Math.round(l.human),
+    headline: str(l.headline, 200) ? l.headline : null,
+    confidence: str(l.confidence, 40) ? l.confidence : null,
+    shape: { points: l.shape.points.map(([x, y]) => [x, y]), w: l.shape.w },
+    createdAt: l.createdAt,
+    x: spot.x,
+    y: spot.y,
+    fallen: l.fallen === true,
+    fallenAt: num(l.fallenAt, 0, 1e14) ? l.fallenAt : 0,
+    v: l.v,
+    by: l.by,
+  };
+};
+
+// Every change bumps a leaf's version; the newest version of each leaf wins everywhere.
+const stamp = (leaf) => Object.assign(leaf, { v: Date.now(), by: room?.selfId ?? "me" });
+const isNewer = (a, b) => a.v > b.v || (a.v === b.v && a.by > b.by);
+
+// Order by age, then let the oldest leaves fall off a full tree and trim the pile.
+// Every peer runs this on the same leaves, so they all land on the same tree.
+const normalize = () => {
+  leaves.sort((a, b) => a.createdAt - b.createdAt || (a.id < b.id ? -1 : 1));
+  const onTree = leaves.filter((l) => !l.fallen);
+  const newest = onTree.at(-1);
+  for (const leaf of onTree.slice(0, Math.max(0, onTree.length - MAX_TREE))) {
+    leaf.fallen = true;
+    leaf.fallenAt = newest.createdAt;
+  }
+  const pile = leaves.filter((l) => l.fallen).sort((a, b) => a.fallenAt - b.fallenAt);
+  const dropped = new Set(pile.slice(0, Math.max(0, pile.length - MAX_PILE)).map((l) => l.id));
+  if (dropped.size) leaves = leaves.filter((l) => !dropped.has(l.id));
+};
+
+const isRemotelyHeld = (id) => {
+  const h = remoteHeld.get(id);
+  return Boolean(h && performance.now() - h.t < HELD_TIMEOUT);
+};
 const colorFor = ({ human }) => {
   const upper = STOPS.findIndex(([at]) => human <= at);
   const [[a, from], [b, to]] = upper <= 0 ? [STOPS[0], STOPS[0]] : [STOPS[upper - 1], STOPS[upper]];
@@ -113,7 +178,7 @@ const buildLeaf = (leaf, onPile) => {
   face.addEventListener("blur", hidePopover);
   if (!onPile) {
     face.addEventListener("pointerdown", (e) => {
-      if (e.button !== 0 || held) return;
+      if (e.button !== 0 || held || isRemotelyHeld(leaf.id)) return;
       drag = { el, leaf, x: e.clientX, y: e.clientY, moved: false };
       face.setPointerCapture(e.pointerId);
     });
@@ -134,6 +199,7 @@ const buildLeaf = (leaf, onPile) => {
         dropHeld();
       }
       drag = null;
+      if (renderDeferred) setTimeout(() => renderTree(), 0);
     };
     face.addEventListener("pointerup", endDrag);
     face.addEventListener("pointercancel", endDrag);
@@ -150,13 +216,21 @@ const buildLeaf = (leaf, onPile) => {
   return el;
 };
 
-const renderTree = (freshId) => {
-  const onTree = leaves.filter((l) => !l.fallen);
-  const pile = leaves.filter((l) => l.fallen).sort((a, b) => a.fallenAt - b.fallenAt);
+const renderTree = (fresh = []) => {
+  if (held || drag) return void (renderDeferred = true);
+  renderDeferred = false;
+  const freshIds = new Set([fresh].flat());
+  const visible = leaves.filter((l) => !landing.has(l.id));
+  const onTree = visible.filter((l) => !l.fallen);
+  const pile = visible.filter((l) => l.fallen).sort((a, b) => a.fallenAt - b.fallenAt);
 
   leavesEl.replaceChildren(...onTree.map((leaf) => {
     const el = buildLeaf(leaf, false);
-    if (leaf.id === freshId) el.classList.add("fresh");
+    if (freshIds.has(leaf.id)) el.classList.add("fresh");
+    if (isRemotelyHeld(leaf.id)) {
+      el.classList.add("remote-held");
+      el.style.setProperty("--peer", remoteHeld.get(leaf.id).color);
+    }
     el.style.left = leaf.x + "%";
     el.style.top = leaf.y + "%";
     el.style.setProperty("--rot", (hash(leaf.id) % 30) - 15 + "deg");
@@ -188,9 +262,9 @@ const renderTree = (freshId) => {
   }));
   if (tumbled) swish();
 
-  rendered = new Map(leaves.map((l) => [l.id, { x: l.x, y: l.y, fallen: Boolean(l.fallen) }]));
+  rendered = new Map(visible.map((l) => [l.id, { x: l.x, y: l.y, fallen: Boolean(l.fallen) }]));
   $("count").textContent = `${onTree.length} ${onTree.length === 1 ? "leaf" : "leaves"} of gratitude` + (pile.length ? ` · ${pile.length} in the pile` : "");
-  $("empty").hidden = leaves.length > 0;
+  $("empty").hidden = visible.length > 0;
 };
 
 const liftLeaf = (el, leaf) => {
@@ -198,6 +272,7 @@ const liftLeaf = (el, leaf) => {
   held = { el, leaf, x: leaf.x, y: leaf.y };
   el.classList.add("held");
   pickUp();
+  room?.move({ id: leaf.id, x: leaf.x, y: leaf.y });
 };
 
 const moveHeld = (x, y) => {
@@ -206,6 +281,7 @@ const moveHeld = (x, y) => {
   held.y = y;
   held.el.style.left = x + "%";
   held.el.style.top = y + "%";
+  room?.move({ id: held.leaf.id, x, y });
 };
 
 const dropHeld = async () => {
@@ -218,34 +294,40 @@ const dropHeld = async () => {
   el.style.left = spot.x + "%";
   el.style.top = spot.y + "%";
   setTimeout(() => el.classList.remove("returning"), 700);
-  leaf.x = spot.x;
-  leaf.y = spot.y;
+  const current = leaves.find((l) => l.id === leaf.id);
+  if (current) {
+    Object.assign(current, spot);
+    stamp(current);
+    room?.upsert([current]);
+  }
   rendered.set(leaf.id, { ...spot, fallen: false });
   putDown();
+  if (renderDeferred) setTimeout(() => renderTree(), 0);
 };
 
 const addLeaf = (leaf) => {
-  const onTree = leaves.filter((l) => !l.fallen);
-  const oldest = onTree.length >= MAX_TREE ? onTree[0].id : null;
-  const next = leaves.map((l) => (l.id === oldest ? { ...l, fallen: true, fallenAt: Date.now() } : l));
-  const added = { ...leaf, ...pickSpot(next.filter((l) => !l.fallen)) };
-  const pile = next.filter((l) => l.fallen).slice(-MAX_PILE);
-  leaves = [...pile, ...next.filter((l) => !l.fallen), added];
+  const added = stamp({ ...leaf, ...pickSpot(leaves.filter((l) => !l.fallen)), fallen: false, fallenAt: 0 });
+  leaves.push(added);
+  normalize();
+  room?.upsert([added]);
   return added;
 };
 
 const deleteLeaf = (leaf) => {
   if (!confirm(`Remove "${leaf.gratitude}" from the tree?`)) return;
   hidePopover();
+  removed.add(leaf.id);
   leaves = leaves.filter((l) => l.id !== leaf.id);
+  room?.remove(leaf.id);
   renderTree();
 };
 
 const showPopover = (el, leaf) => {
   popover.innerHTML = `<p class="lead">I am thankful for</p><p class="body"></p>
     <div class="bar"><span style="width:${leaf.human}%; background:${colorFor(leaf)}"></span></div>
-    <p class="meta"><b>${leaf.human}% genuine</b> · ${leaf.headline ?? ""}</p>`;
+    <p class="meta"><b>${leaf.human}% genuine</b> · <span class="headline"></span></p>`;
   popover.querySelector(".body").textContent = leaf.gratitude;
+  popover.querySelector(".headline").textContent = leaf.headline ?? "";
   const wrap = popover.parentElement.getBoundingClientRect();
   const box = el.getBoundingClientRect();
   const left = Math.min(Math.max(box.left + box.width / 2 - wrap.left, 125), wrap.width - 125);
@@ -416,13 +498,15 @@ const grabLeaf = ([cx, cy], W, H) => {
   let best = null;
   for (const el of leavesEl.querySelectorAll(".tree-leaf")) {
     const leaf = leaves.find((l) => l.id === el.dataset.id);
+    if (!leaf || isRemotelyHeld(leaf.id)) continue;
     const d = Math.hypot((leaf.x / 100) * W - cx, (leaf.y / 100) * H - cy);
     if (d < W * 0.1 && (!best || d < best.d)) best = { el, leaf, d };
   }
   if (best) liftLeaf(best.el, best.leaf);
 };
 
-const shakeTree = () => {
+const shakeTree = (fromPeer = false) => {
+  if (!fromPeer) room?.shake();
   const tree = treeEl;
   rustle(1, 0.9);
   tree.classList.remove("shaking");
@@ -470,6 +554,7 @@ handlers.play = (lm, now) => {
   if (!lm) {
     if (pinching) dropHeld();
     pinching = false;
+    shareHand(null);
     return;
   }
   drawHand(pctx, toPixels(lm, vw, vh), "rgba(232, 116, 43, .5)");
@@ -484,6 +569,8 @@ handlers.play = (lm, now) => {
     pinching = false;
     dropHeld();
   }
+  const unit = ([x, y]) => [Math.round((x / W) * 1000) / 1000, Math.round((y / H) * 1000) / 1000];
+  shareHand({ tips: [4, 8, 12, 16, 20].map((tip) => unit(toTree(lm[tip], W, H))), cursor: unit(cursor), pinching });
   if (pinching && held) {
     moveHeld((cursor[0] / W) * 100, (cursor[1] / H) * 100);
   } else if (!pinching) {
@@ -507,9 +594,17 @@ handlers.play = (lm, now) => {
   ctx.stroke();
 };
 
+let handShared = false;
+const shareHand = (hand) => {
+  if (!room || (!hand && !handShared)) return;
+  handShared = Boolean(hand);
+  room.hand(hand);
+};
+
 onStop.play = () => {
   if (pinching) dropHeld();
   pinching = false;
+  shareHand(null);
   shakeTrail = [];
   handLayer.getContext("2d").clearRect(0, 0, handLayer.width, handLayer.height);
   pip.hidden = true;
@@ -598,6 +693,7 @@ hang.addEventListener("click", async () => {
   hang.disabled = true;
   showError("");
   const leaf = addLeaf(pending);
+  landing.add(leaf.id);
   hang.disabled = false;
 
   const treeBox = $("tree").getBoundingClientRect();
@@ -622,6 +718,7 @@ hang.addEventListener("click", async () => {
   ], { duration: 1100, easing: "cubic-bezier(.45,.05,.4,1)", fill: "forwards" })
     .finished.then(() => {
       ghost.remove();
+      landing.delete(leaf.id);
       chime(leaf.human);
       rustle(0.4, 0.25);
       renderTree(leaf.id);
@@ -686,3 +783,229 @@ soundToggle.addEventListener("click", () => {
 renderSoundToggle();
 document.addEventListener("pointerdown", unlock);
 document.addEventListener("keydown", unlock);
+
+// ---- Shared rooms ----
+const roomSolo = $("roomSolo"), roomLive = $("roomLive"), roomStatus = $("roomStatus");
+const roomCreate = $("roomCreate"), roomJoin = $("roomJoin"), roomCode = $("roomCode");
+const roomName = $("roomName"), roomPeople = $("roomPeople"), roomCopy = $("roomCopy"), peerLayer = $("peerLayer");
+
+const leafEl = (id) => leavesEl.querySelector(`[data-id="${CSS.escape(id)}"]`);
+
+const mergeLeaves = (incoming) => {
+  if (!Array.isArray(incoming)) return [];
+  const fresh = [];
+  let changed = false;
+  for (const raw of incoming.slice(0, MAX_LEAVES)) {
+    const leaf = cleanLeaf(raw);
+    if (!leaf || removed.has(leaf.id)) continue;
+    const i = leaves.findIndex((l) => l.id === leaf.id);
+    if (i < 0) {
+      leaves.push(leaf);
+      fresh.push(leaf);
+      changed = true;
+    } else if (isNewer(leaf, leaves[i])) {
+      leaves[i] = leaf;
+      changed = true;
+    }
+    remoteHeld.delete(leaf.id);
+  }
+  if (changed) {
+    normalize();
+    renderTree(fresh.map((l) => l.id));
+  }
+  return fresh;
+};
+
+const releaseRemote = (id) => {
+  remoteHeld.delete(id);
+  const el = leafEl(id), leaf = leaves.find((l) => l.id === id);
+  if (!el || !leaf) return;
+  el.classList.remove("remote-held");
+  el.style.left = leaf.x + "%";
+  el.style.top = leaf.y + "%";
+};
+
+setInterval(() => {
+  for (const id of remoteHeld.keys()) if (!isRemotelyHeld(id)) releaseRemote(id);
+}, 500);
+
+let peerLoop = 0;
+const drawPeers = () => {
+  const W = treeEl.clientWidth, H = treeEl.clientHeight;
+  peerLayer.width = W;
+  peerLayer.height = H;
+  const ctx = peerLayer.getContext("2d");
+  const now = performance.now();
+  for (const [id, hand] of remoteHands) {
+    if (now - hand.t > 2000) {
+      remoteHands.delete(id);
+      continue;
+    }
+    ctx.lineWidth = 2;
+    ctx.strokeStyle = hand.color;
+    ctx.fillStyle = "rgba(255, 250, 242, .9)";
+    for (const [x, y] of hand.tips) {
+      ctx.beginPath();
+      ctx.arc(x * W, y * H, 5, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.stroke();
+    }
+    ctx.beginPath();
+    ctx.arc(hand.cursor[0] * W, hand.cursor[1] * H, hand.pinching ? 10 : 16, 0, Math.PI * 2);
+    ctx.lineWidth = 3;
+    ctx.stroke();
+  }
+  peerLoop = remoteHands.size ? requestAnimationFrame(drawPeers) : 0;
+};
+const wakePeers = () => {
+  if (!peerLoop) peerLoop = requestAnimationFrame(drawPeers);
+};
+
+const point = (p) => Array.isArray(p) && p.length === 2 && p.every((n) => num(n, 0, 1));
+
+const roomHandlers = {
+  snapshot: () => ({ leaves, removed: [...removed].slice(-500) }),
+  onSync: (data) => {
+    for (const id of (Array.isArray(data?.removed) ? data.removed : []).slice(0, 500)) {
+      if (!str(id, 64)) continue;
+      removed.add(id);
+      leaves = leaves.filter((l) => l.id !== id);
+    }
+    mergeLeaves(data?.leaves);
+    renderTree();
+  },
+  onLeaves: (list) => {
+    const fresh = mergeLeaves(list).filter((l) => !l.fallen);
+    if (fresh.length) {
+      chime(fresh[0].human);
+      rustle(0.4, 0.25);
+    }
+  },
+  onRemove: (id) => {
+    if (!str(id, 64)) return;
+    removed.add(id);
+    leaves = leaves.filter((l) => l.id !== id);
+    renderTree();
+  },
+  onMove: (data, peerId) => {
+    if (!str(data?.id, 64) || !num(data.x, -10, 110) || !num(data.y, -10, 110)) return;
+    if (held?.leaf.id === data.id) return;
+    const color = peerColor(peerId);
+    remoteHeld.set(data.id, { t: performance.now(), color, peerId });
+    const el = leafEl(data.id);
+    if (!el) return;
+    if (!el.classList.contains("remote-held")) {
+      el.classList.add("remote-held");
+      el.style.setProperty("--peer", color);
+      pickUp();
+    }
+    el.style.left = data.x + "%";
+    el.style.top = data.y + "%";
+  },
+  onHand: (hand, peerId) => {
+    if (!hand) return void remoteHands.delete(peerId);
+    if (!Array.isArray(hand.tips) || hand.tips.length !== 5 || !hand.tips.every(point) || !point(hand.cursor)) return;
+    remoteHands.set(peerId, { tips: hand.tips, cursor: hand.cursor, pinching: hand.pinching === true, color: peerColor(peerId), t: performance.now() });
+    wakePeers();
+  },
+  onShake: () => shakeTree(true),
+  onPeerLeft: (peerId) => {
+    remoteHands.delete(peerId);
+    for (const [id, h] of remoteHeld) if (h.peerId === peerId) releaseRemote(id);
+  },
+  onPeers: (peers) => renderPeople(peers),
+};
+
+const setRoomStatus = (text) => {
+  roomStatus.textContent = text;
+  roomStatus.hidden = !text;
+};
+
+const renderPeople = (peers) => {
+  const dots = [room.selfId, ...peers].map((id) => {
+    const i = document.createElement("i");
+    i.style.setProperty("--peer", peerColor(id));
+    return i;
+  });
+  const label = document.createElement("span");
+  label.textContent = peers.length ? `${peers.length + 1} people here` : "Just you so far. Share the code!";
+  roomPeople.replaceChildren(...dots, label);
+};
+
+const setRoomParam = (code) => {
+  const url = new URL(location.href);
+  if (code) url.searchParams.set("room", code);
+  else url.searchParams.delete("room");
+  history.replaceState(null, "", url);
+};
+
+const leaveRoom = () => {
+  if (!room) return;
+  shareHand(null);
+  room.leave();
+  room = null;
+  handShared = false;
+  remoteHands.clear();
+  for (const id of [...remoteHeld.keys()]) releaseRemote(id);
+  setRoomParam(null);
+  roomLive.hidden = true;
+  roomSolo.hidden = false;
+  setRoomStatus("You left the room. The tree you see is yours now.");
+};
+
+let joining = false;
+const enterRoom = async (code, { bringLeaves }) => {
+  if (joining || code.length < CODE_LENGTH || room?.code === code) return;
+  joining = true;
+  leaveRoom();
+  roomCreate.disabled = true;
+  setRoomStatus("Connecting to the room...");
+  try {
+    if (!bringLeaves) {
+      leaves = [];
+      removed.clear();
+      renderTree();
+    }
+    room = await connect(code, roomHandlers);
+    // Leaves made before joining get stamped with this peer's id so versions compare cleanly.
+    leaves.forEach((l) => (l.by = room.selfId));
+    setRoomParam(code);
+    roomName.textContent = code;
+    renderPeople(room.peers());
+    roomSolo.hidden = true;
+    roomLive.hidden = false;
+    setRoomStatus("");
+  } catch (err) {
+    console.error(err);
+    room = null;
+    setRoomStatus("Couldn't reach the room. Check your connection and try again.");
+  } finally {
+    joining = false;
+    roomCreate.disabled = false;
+  }
+};
+
+roomCreate.addEventListener("click", () => enterRoom(makeCode(), { bringLeaves: true }));
+roomJoin.addEventListener("submit", (e) => {
+  e.preventDefault();
+  const code = cleanCode(roomCode.value);
+  if (code.length < CODE_LENGTH) return setRoomStatus(`Room codes are ${CODE_LENGTH} letters and numbers.`);
+  roomCode.value = "";
+  enterRoom(code, { bringLeaves: false });
+});
+roomCode.addEventListener("input", () => (roomCode.value = cleanCode(roomCode.value)));
+$("roomLeave").addEventListener("click", leaveRoom);
+roomCopy.addEventListener("click", async () => {
+  const url = new URL(location.pathname, location.origin);
+  url.searchParams.set("room", room.code);
+  try {
+    await navigator.clipboard.writeText(url.href);
+    roomCopy.textContent = "Copied!";
+  } catch {
+    prompt("Copy this invite link:", url.href);
+  }
+  setTimeout(() => (roomCopy.textContent = "Copy invite link"), 1500);
+});
+
+const startCode = cleanCode(new URLSearchParams(location.search).get("room"));
+if (startCode) enterRoom(startCode, { bringLeaves: false });

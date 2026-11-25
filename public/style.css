@@ -276,3 +276,24 @@ button.small { font-size: 15px; padding: 8px 16px; }
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation: none !important; transition: none !important; }
 }
+
+.room-bar { display: flex; flex-direction: column; align-items: center; gap: 6px; margin: 0 0 10px; }
+.room-solo, .room-live { display: flex; flex-wrap: wrap; align-items: center; justify-content: center; gap: 8px; }
+.room-solo[hidden], .room-live[hidden] { display: none; }
+.room-or { color: var(--on-sky-muted); font-size: 14px; }
+.room-join { display: flex; gap: 6px; }
+.room-join input {
+  width: 92px; font: 600 16px "Fredoka", sans-serif; letter-spacing: .12em; text-transform: uppercase; text-align: center;
+  color: var(--ink); background: #fffaf2; border: 3px solid #f1d3ad; border-radius: 999px; padding: 6px 10px;
+}
+.room-join input:focus { outline: none; border-color: var(--pumpkin); }
+.room-name { color: var(--on-sky); font-size: 16px; }
+.room-name b { letter-spacing: .12em; background: #fffaf2; color: var(--ink); border-radius: 8px; padding: 2px 8px; }
+.room-people { display: inline-flex; align-items: center; gap: 4px; color: var(--on-sky-muted); font-size: 14px; }
+.room-people i { width: 12px; height: 12px; border-radius: 50%; background: var(--peer); border: 2px solid #fffaf2; }
+.room-live button.link { color: var(--on-sky-muted); }
+.room-status { margin: 0; font-size: 14px; color: var(--on-sky-muted); }
+.room-status[hidden] { display: none; }
+.tree-leaf.remote-held { transform: translate(-50%, -50%) scale(1.8); z-index: 6; animation: none; transition: left .06s linear, top .06s linear; }
+.tree-leaf.remote-held svg { filter: drop-shadow(0 0 4px var(--peer)) drop-shadow(0 0 2px var(--peer)); }
+.tree-leaf.remote-held .leaf-delete { display: none; }

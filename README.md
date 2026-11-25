@@ -21,6 +21,12 @@ The Pangram key stays on the server, which only scores sentences. Leaves are nev
 
 Stuck? **Give me an idea** types a random finish for the sentence into the box from a curated list of 15 answers, skipping any that are already on the tree.
 
+## Rooms
+
+**Make a room** creates a 5-character code, and friends join by typing it in or opening the invite link (`/?room=CODE`). Everyone in a room shares one tree in real time: new leaves, where leaves sit, live drags, deletions, tree shakes, and each person's webcam hand (their fingertips and pinch cursor show up on everyone's tree in their own color). If you make a room, your current leaves come with you. If you join one, you start from the room's tree.
+
+Peers connect directly over WebRTC using [Trystero](https://github.com/dmotz/trystero), which uses public Nostr relays only to help them find each other. No server or account is needed, so it works on Vercel as-is. As with solo play, nothing is saved: a room's tree lasts as long as someone has it open. Webcam video never leaves your browser; only hand points are shared.
+
 ## Deploy to Vercel
 
 The site deploys as static files from `public/` plus one Vercel function (`api/index.js`) that handles Pangram scoring. Add `PANGRAM_API_KEY` under **Settings → Environment Variables** and deploy; nothing else is needed.

@@ -66,6 +66,23 @@
     </section>
 
     <section class="tree-wrap">
+      <div class="room-bar">
+        <div class="room-solo" id="roomSolo">
+          <button type="button" id="roomCreate" class="secondary small">Make a room</button>
+          <span class="room-or">or</span>
+          <form id="roomJoin" class="room-join" autocomplete="off">
+            <input id="roomCode" maxlength="8" placeholder="CODE" aria-label="Room code" spellcheck="false" autocapitalize="characters" />
+            <button type="submit" class="secondary small">Join</button>
+          </form>
+        </div>
+        <div class="room-live" id="roomLive" hidden>
+          <span class="room-name">Room <b id="roomName"></b></span>
+          <span class="room-people" id="roomPeople"></span>
+          <button type="button" id="roomCopy" class="link">Copy invite link</button>
+          <button type="button" id="roomLeave" class="link">Leave</button>
+        </div>
+        <p class="room-status" id="roomStatus" hidden></p>
+      </div>
       <p class="count" id="count">0 leaves of gratitude</p>
       <div class="legend"><span>robotic</span><i></i><span>genuine</span></div>
       <div class="play-bar">
@@ -97,6 +114,7 @@
         </svg>
         <div class="pile" id="pile"></div>
         <div class="leaves" id="leaves"></div>
+        <canvas class="hand-layer" id="peerLayer"></canvas>
         <canvas class="hand-layer" id="handLayer"></canvas>
         <p class="empty" id="empty">The tree is waiting for its first leaf.</p>
       </div>
