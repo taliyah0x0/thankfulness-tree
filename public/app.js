@@ -734,12 +734,15 @@ blowToggle.addEventListener("click", async () => {
     blowToggle.firstChild.textContent = "Blow on the tree";
     return;
   }
+  blowToggle.disabled = true;
   try {
     await startMic();
     blowToggle.firstChild.textContent = "Stop blowing";
   } catch (err) {
     micStream = null;
     alert(err.name === "NotAllowedError" ? "We need your microphone to feel the breeze." : `Microphone trouble: ${err.message}`);
+  } finally {
+    blowToggle.disabled = false;
   }
 });
 
