@@ -87,7 +87,13 @@ const handleHang = async (req, res) => {
   if (!leaf) return send(res, 404, { error: "That leaf blew away. Try growing it again!" });
   pending.delete(id);
   leaves = [...leaves, leaf].slice(-MAX_LEAVES);
-  await saveLeaves();
+  try {
+    await saveLeaves();
+  } catch (err) {
+    leaves = leaves.filter((l) => l.id !== id);
+    pending.set(id, leaf);
+    throw err;
+  }
   send(res, 200, leaf);
 };
 
