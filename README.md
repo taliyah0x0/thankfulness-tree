@@ -15,7 +15,7 @@ The Pangram key stays on the server. Leaves are saved to `data/leaves.json`. The
 
 ## Scanning a written note
 
-**Or scan a written note** opens the camera on a paper note. **Snap and add to the tree** reads it with Tesseract.js OCR in the browser (best with neat, dark printing), strips a leading "I am thankful for", scores it with Pangram, and hangs it automatically on a classic leaf shape.
+**Or scan a written note** opens the camera on a paper note. **Snap and add to the tree** reads it with Tesseract.js OCR in the browser (best with neat, dark printing), strips a leading "I am thankful for", scores it with Pangram, and hangs it automatically, using your captured hand shape if you already have one and a classic leaf shape otherwise.
 
 ## Playing with the tree
 

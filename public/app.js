@@ -682,6 +682,7 @@ const cleanNote = (raw) => {
 };
 
 const closeScanner = () => {
+  startId++;
   if (mode === "scan") stopCamera();
   scanner.hidden = true;
   camera.hidden = Boolean(handShape);
@@ -731,6 +732,7 @@ snap.addEventListener("click", async () => {
       ocrWorker = await Tesseract.createWorker("eng");
     }
     const text = cleanNote((await ocrWorker.recognize(canvas)).data.text);
+    if (scanner.hidden) return;
     if (text.length < 2) {
       scanHint.textContent = "Couldn't read that. Try bigger, darker writing.";
       snap.disabled = false;
