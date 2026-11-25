@@ -6,7 +6,7 @@ A cozy Thanksgiving web interactive. Visitors hold their palm up to the webcam, 
 
 ## Design
 
-The look of the tree was designed in [Paper](https://paper.design). See the design file: https://app.paper.design/file/01M885NE3CY1H9W5EM1WBNZT93
+The look of the tree was designed in [Paper](https://paper.design). See the design file: [https://app.paper.design/file/01M885NE3CY1H9W5EM1WBNZT93](https://app.paper.design/file/01M885NE3CY1H9W5EM1WBNZT93/p-2-0)
 
 ## Run it
 
