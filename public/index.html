@@ -31,10 +31,10 @@
           <div class="cam-stage">
             <video id="video" playsinline muted></video>
             <canvas id="overlay"></canvas>
+            <div class="cam-progress"><span id="camProgress"></span></div>
             <p class="cam-hint" id="camHint">Hold your palm up to the camera, fingers spread</p>
           </div>
           <button type="button" id="camStart" class="secondary">Turn on camera</button>
-          <button type="button" id="capture" class="secondary" disabled hidden>Capture my hand</button>
         </div>
 
         <div class="captured" id="captured" hidden>
@@ -42,7 +42,7 @@
           <button type="button" class="link" id="retake">Retake hand</button>
         </div>
 
-        <button type="submit" form="form" id="submit" disabled>Capture your hand first</button>
+        <button type="submit" form="form" id="submit" disabled hidden>Grow a leaf</button>
 
         <div class="result" id="result" hidden>
           <div class="score"><span id="scoreNum">0</span><small>% human</small></div>
@@ -57,6 +57,12 @@
     <section class="tree-wrap">
       <p class="count" id="count">0 leaves of gratitude</p>
       <div class="legend"><span>robotic</span><i></i><span>human</span></div>
+      <div class="play-bar"><button type="button" id="playToggle" class="secondary small">Play with the tree</button></div>
+      <div class="pip" id="pip" hidden>
+        <video id="pipVideo" playsinline muted></video>
+        <canvas id="pipCanvas"></canvas>
+        <p>Wave fast to shake the tree. Pinch a leaf to pick it up.</p>
+      </div>
       <div class="tree" id="tree">
         <svg viewBox="0 0 600 600" aria-hidden="true">
           <ellipse cx="300" cy="592" rx="230" ry="22" class="ground" />
@@ -77,6 +83,7 @@
           <path class="bark" d="M292 560 C296 500 293 450 296 400 M308 520 C305 470 309 430 306 380" />
         </svg>
         <div class="leaves" id="leaves"></div>
+        <canvas class="hand-layer" id="handLayer"></canvas>
         <p class="empty" id="empty">The tree is waiting for its first leaf.</p>
       </div>
       <div class="popover" id="popover" hidden></div>
