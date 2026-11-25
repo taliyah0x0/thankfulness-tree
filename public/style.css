@@ -154,7 +154,7 @@ button.link:active { transform: none; }
 .tree-leaf:hover, .tree-leaf:focus-within { transform: translate(-50%, -50%) rotate(var(--rot)) scale(1.5); z-index: 3; }
 .leaf-face, .leaf-face:hover, .leaf-face:active {
   position: absolute; inset: 0; padding: 0; border-radius: 0; background: none; box-shadow: none; outline: none;
-  transform: rotate(var(--gust, 0deg)); transform-origin: 50% 92%; touch-action: none; cursor: grab;
+  transform: none; touch-action: none; cursor: grab;
 }
 .tree-leaf.held .leaf-face { cursor: grabbing; }
 .tree-leaf.wiggle svg, .pile-leaf.wiggle svg { animation: wig .45s ease-out; transform-origin: 50% 92%; }
@@ -229,9 +229,6 @@ footer a { color: var(--pumpkin); }
 .cam-progress span { display: block; width: 0; height: 100%; background: var(--pumpkin); transition: width .1s linear; }
 
 .play-bar { display: flex; justify-content: center; flex-wrap: wrap; gap: 10px; margin: 8px 0 0; }
-#blowToggle { position: relative; overflow: hidden; }
-.mic-meter { position: absolute; left: 0; right: 0; bottom: 0; height: 4px; }
-.mic-meter i { display: block; width: 0; height: 100%; background: var(--pumpkin); transition: width .08s linear; }
 button.small { font-size: 15px; padding: 8px 16px; }
 .pip {
   position: absolute; z-index: 4; left: 0; top: 70px; width: 170px; border-radius: 14px; overflow: hidden;

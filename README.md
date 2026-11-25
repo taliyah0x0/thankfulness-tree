@@ -1,6 +1,6 @@
 # The Thankfulness Tree
 
-A cozy Thanksgiving web interactive. Visitors hold their palm up to the webcam, and MediaPipe hand tracking turns the hand's outline into their leaf shape. They finish the sentence "I am thankful for ___", [Pangram](https://www.pangram.com) scores how human it sounds (which sets the leaf's color, from withered brown to bright red), and the leaf flies onto a shared tree. Hover or tap any leaf to read it and see its score.
+A cozy Thanksgiving web interactive. Visitors hold their palm up to the webcam, and MediaPipe hand tracking turns the hand's outline into their leaf shape. They finish the sentence "I am thankful for ___", [Pangram](https://www.pangram.com) scores how genuine (human-written) it sounds (which sets the leaf's color, from withered brown to bright red), and the leaf flies onto a shared tree. Hover or tap any leaf to read it and see its score.
 
 ## Run it
 
@@ -18,8 +18,7 @@ The Pangram key stays on the server. Leaves are saved to `data/leaves.json`. The
 - Drag any leaf on the tree with the mouse (or a finger) to move it; the new spot is saved for everyone.
 - Wiggle the cursor quickly across the tree to shake it; hovering a leaf rustles it.
 - **Play with the tree** uses the webcam: wave to shake, pinch a leaf to pick it up, open your fingers to place it.
-- **Blow on the tree** listens to the microphone; blowing makes a breeze that sways the leaves.
-- Day, Sunset, and Night skies, plus synthesized sounds (fire crackle, a note per leaf color as it lands, rustles, wind). Sound starts on the first click and can be muted.
+- Day, Sunset, and Night skies, plus synthesized sounds (a note per leaf color as a new leaf lands, rustles, pick-up and put-down sounds). Sound starts on the first click and can be muted.
 
 ## Removing leaves
 

@@ -1,6 +1,6 @@
 import { leafSvg, textBox, normalizeHand, toPixels, drawHand } from "./leaf-shape.js";
 import { clampPosition } from "./tree-layout.js";
-import { audioContext, unlock, isMuted, setMuted, rustle, chime, pickUp, putDown, swish, setWind } from "./sound.js";
+import { unlock, isMuted, setMuted, rustle, chime, pickUp, putDown, swish } from "./sound.js";
 
 const VISION = "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@1.2.3";
 const HAND_MODEL = "https://storage.googleapis.com/mediapipe-models/hand_landmarker/hand_landmarker/float16/1/hand_landmarker.task";
@@ -14,7 +14,7 @@ const bigLeaf = $("bigLeaf"), result = $("result"), errorEl = $("error"), hang =
 const leavesEl = $("leaves"), popover = $("popover");
 const camera = $("camera"), video = $("video"), overlay = $("overlay"), camHint = $("camHint");
 const camStart = $("camStart"), camProgress = $("camProgress"), captured = $("captured"), retake = $("retake");
-const pileEl = $("pile"), treeEl = $("tree"), blowToggle = $("blowToggle"), micLevel = $("micLevel"), soundToggle = $("soundToggle");
+const pileEl = $("pile"), treeEl = $("tree"), soundToggle = $("soundToggle");
 const playToggle = $("playToggle"), pip = $("pip"), pipVideo = $("pipVideo"), pipCanvas = $("pipCanvas"), handLayer = $("handLayer");
 
 let leaves = [];
@@ -98,7 +98,7 @@ const buildLeaf = (leaf, onPile) => {
   const face = document.createElement("button");
   face.type = "button";
   face.className = "leaf-face";
-  face.setAttribute("aria-label", `I am thankful for ${leaf.gratitude}. ${leaf.human}% human.`);
+  face.setAttribute("aria-label", `I am thankful for ${leaf.gratitude}. ${leaf.human}% genuine.`);
   face.innerHTML = leafSvg(leaf.shape) + '<span class="words"></span>';
   const words = face.querySelector(".words");
   words.textContent = leaf.gratitude;
@@ -167,7 +167,6 @@ const renderTree = (freshId) => {
     el.style.top = leaf.y + "%";
     el.style.setProperty("--rot", (hash(leaf.id) % 30) - 15 + "deg");
     el.style.setProperty("--delay", -(hash(leaf.id) % 30) / 10 + "s");
-    el.style.setProperty("--phase", (hash(leaf.id) % 628) / 100);
     return el;
   }));
 
@@ -229,7 +228,6 @@ const dropHeld = async () => {
   leaf.y = spot.y;
   rendered.set(leaf.id, { ...spot, fallen: false });
   putDown();
-  setTimeout(() => chime(leaf.human), 120);
   const res = await fetch(`/api/leaves/${leaf.id}/position`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -264,7 +262,7 @@ const deleteLeaf = async (leaf) => {
 const showPopover = (el, leaf) => {
   popover.innerHTML = `<p class="lead">I am thankful for</p><p class="body"></p>
     <div class="bar"><span style="width:${leaf.human}%; background:${colorFor(leaf)}"></span></div>
-    <p class="meta"><b>${leaf.human}% human</b> · ${leaf.headline ?? ""}</p>`;
+    <p class="meta"><b>${leaf.human}% genuine</b> · ${leaf.headline ?? ""}</p>`;
   popover.querySelector(".body").textContent = leaf.gratitude;
   const wrap = popover.parentElement.getBoundingClientRect();
   const box = el.getBoundingClientRect();
@@ -677,73 +675,6 @@ treeEl.addEventListener("pointermove", (e) => {
   if (e.pointerType !== "mouse" || held || drag) return;
   const box = treeEl.getBoundingClientRect();
   detectShake(e.clientX - box.left, performance.now(), box.width);
-});
-
-let micStream = null;
-let breeze = 0;
-let gustRunning = false;
-
-const gustLoop = () => {
-  const now = performance.now();
-  const speed = 3 + breeze * 9;
-  for (const el of leavesEl.children) {
-    el.style.setProperty("--gust", Math.sin((now / 1000) * speed + Number(el.style.getPropertyValue("--phase"))) * breeze * 30 + "deg");
-  }
-  setWind(breeze);
-  if (breeze > 0.35 && now - lastRustle > 260) {
-    rustle(breeze * 0.7, 0.25);
-    lastRustle = now;
-  }
-  if (micStream || breeze > 0.005) return requestAnimationFrame(gustLoop);
-  gustRunning = false;
-  for (const el of leavesEl.children) el.style.removeProperty("--gust");
-};
-
-const startMic = async () => {
-  unlock();
-  micStream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false } });
-  const actx = audioContext();
-  const analyser = actx.createAnalyser();
-  analyser.fftSize = 1024;
-  actx.createMediaStreamSource(micStream).connect(analyser);
-  const samples = new Float32Array(analyser.fftSize);
-  const listen = () => {
-    if (!micStream) {
-      breeze = 0;
-      micLevel.style.width = "0%";
-      return;
-    }
-    analyser.getFloatTimeDomainData(samples);
-    const rms = Math.sqrt(samples.reduce((sum, s) => sum + s * s, 0) / samples.length);
-    const target = Math.min(Math.max((rms - 0.03) / 0.12, 0), 1);
-    breeze += (target - breeze) * (target > breeze ? 0.3 : 0.04);
-    micLevel.style.width = breeze * 100 + "%";
-    requestAnimationFrame(listen);
-  };
-  listen();
-  if (!gustRunning) {
-    gustRunning = true;
-    gustLoop();
-  }
-};
-
-blowToggle.addEventListener("click", async () => {
-  if (micStream) {
-    micStream.getTracks().forEach((t) => t.stop());
-    micStream = null;
-    blowToggle.firstChild.textContent = "Blow on the tree";
-    return;
-  }
-  blowToggle.disabled = true;
-  try {
-    await startMic();
-    blowToggle.firstChild.textContent = "Stop blowing";
-  } catch (err) {
-    micStream = null;
-    alert(err.name === "NotAllowedError" ? "We need your microphone to feel the breeze." : `Microphone trouble: ${err.message}`);
-  } finally {
-    blowToggle.disabled = false;
-  }
 });
 
 const SKY_KEY = "thankful-sky";

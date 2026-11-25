@@ -4,7 +4,6 @@ const VOLUME = 0.8;
 let ctx = null;
 let master = null;
 let noise = null;
-let windGain = null;
 let muted = localStorage.getItem("thankful-muted") === "1";
 
 const noiseBurst = ({ at, dur, freq, q = 1, gain, type = "bandpass", sweepTo }) => {
@@ -37,44 +36,7 @@ const tone = ({ at, from, to = from, dur, gain, type = "sine" }) => {
   osc.stop(at + dur + 0.05);
 };
 
-const startAmbient = () => {
-  const bed = ctx.createBufferSource();
-  bed.buffer = noise;
-  bed.loop = true;
-  const warm = ctx.createBiquadFilter();
-  warm.type = "lowpass";
-  warm.frequency.value = 300;
-  const bedGain = ctx.createGain();
-  bedGain.gain.value = 0.03;
-  bed.connect(warm).connect(bedGain).connect(master);
-  bed.start();
-
-  const crackle = () => {
-    if (ctx.state === "running") {
-      const t = ctx.currentTime;
-      const pops = 1 + Math.floor(Math.random() * 3);
-      for (let i = 0; i < pops; i++) {
-        noiseBurst({ at: t + Math.random() * 0.12, dur: 0.004 + Math.random() * 0.018, freq: 1800 + Math.random() * 3000, q: 0.7, gain: 0.025 + Math.random() * 0.05, type: "highpass" });
-      }
-    }
-    setTimeout(crackle, 80 + Math.random() * 450);
-  };
-  crackle();
-
-  const wind = ctx.createBufferSource();
-  wind.buffer = noise;
-  wind.loop = true;
-  const band = ctx.createBiquadFilter();
-  band.type = "bandpass";
-  band.frequency.value = 650;
-  band.Q.value = 0.6;
-  windGain = ctx.createGain();
-  windGain.gain.value = 0;
-  wind.connect(band).connect(windGain).connect(master);
-  wind.start();
-};
-
-export const audioContext = () => {
+const audioContext = () => {
   if (ctx) return ctx;
   ctx = new AudioContext();
   master = ctx.createGain();
@@ -83,7 +45,6 @@ export const audioContext = () => {
   noise = ctx.createBuffer(1, ctx.sampleRate * 2, ctx.sampleRate);
   const data = noise.getChannelData(0);
   for (let i = 0; i < data.length; i++) data[i] = Math.random() * 2 - 1;
-  startAmbient();
   return ctx;
 };
 
@@ -133,9 +94,4 @@ export const putDown = () => {
 export const swish = () => {
   if (!live()) return;
   noiseBurst({ at: ctx.currentTime, dur: 1, freq: 3200, sweepTo: 450, q: 0.8, gain: 0.12 });
-};
-
-export const setWind = (strength) => {
-  if (!windGain) return;
-  windGain.gain.setTargetAtTime(strength * 0.4, ctx.currentTime, 0.08);
 };

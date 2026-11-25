@@ -24,7 +24,7 @@
     </div>
     <p class="eyebrow">Happy Thanksgiving</p>
     <h1>The Thankfulness Tree</h1>
-    <p class="sub">Write what you're grateful for. Pangram checks it sounds like a real human wrote it, then your leaf joins the tree. Drag leaves around, wiggle your cursor to rustle it, or blow into your mic for a breeze.</p>
+    <p class="sub">Write what you're grateful for. Pangram checks it sounds like a real human wrote it, then your leaf joins the tree. Drag leaves around or wiggle your cursor to rustle the tree.</p>
   </header>
 
   <main>
@@ -54,7 +54,7 @@
         <button type="submit" form="form" id="submit" disabled hidden>Grow a leaf</button>
 
         <div class="result" id="result" hidden>
-          <div class="score"><span id="scoreNum">0</span><small>% human</small></div>
+          <div class="score"><span id="scoreNum">0</span><small>% genuine</small></div>
           <p class="verdict" id="verdict"></p>
           <p class="meta" id="meta"></p>
           <button type="button" id="hang">Hang it on the tree</button>
@@ -65,10 +65,9 @@
 
     <section class="tree-wrap">
       <p class="count" id="count">0 leaves of gratitude</p>
-      <div class="legend"><span>robotic</span><i></i><span>human</span></div>
+      <div class="legend"><span>robotic</span><i></i><span>genuine</span></div>
       <div class="play-bar">
         <button type="button" id="playToggle" class="secondary small">Play with the tree</button>
-        <button type="button" id="blowToggle" class="secondary small">Blow on the tree<span class="mic-meter"><i id="micLevel"></i></span></button>
       </div>
       <div class="pip" id="pip" hidden>
         <video id="pipVideo" playsinline muted></video>
