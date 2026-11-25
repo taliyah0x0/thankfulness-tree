@@ -621,7 +621,7 @@ hang.addEventListener("click", async () => {
     const res = await fetch("/api/leaves", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ id: pending.id }),
+      body: JSON.stringify({ leaf: Object.fromEntries(Object.entries(pending).filter(([key]) => key !== "signature")), signature: pending.signature }),
     });
     leaf = await res.json();
     if (!res.ok) throw new Error(leaf.error || "Something went wrong");

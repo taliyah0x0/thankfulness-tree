@@ -11,9 +11,19 @@ npm start              # http://localhost:3000
 
 No dependencies beyond Node 22+. The camera needs HTTPS (or localhost). Hand tracking runs entirely in the browser, and no video leaves the device; only the 21 hand points that make the leaf shape are sent to the server.
 
-The Pangram key stays on the server. Leaves are saved to `data/leaves.json`. The tree holds 17 leaves; when a new one arrives, the oldest falls into a pile on the ground (the newest 30 fallen leaves are kept).
+The Pangram key stays on the server. Locally, leaves are saved to `data/leaves.json`. The tree holds 17 leaves; when a new one arrives, the oldest falls into a pile on the ground (the newest 30 fallen leaves are kept).
 
 Stuck? **Give me an idea** types a random finish for the sentence into the box from a curated list of 15 answers, skipping any that are already on the tree.
+
+## Deploy to Vercel
+
+The site deploys as static files from `public/` plus one Vercel function (`api/index.js`) that serves every `/api/*` route. Vercel functions can't keep files, so leaves are saved to Redis.
+
+1. In the Vercel project, open **Storage** (or the Marketplace), add **Upstash Redis**, and connect it to the project. That sets `UPSTASH_REDIS_REST_URL`/`UPSTASH_REDIS_REST_TOKEN` (or `KV_REST_API_URL`/`KV_REST_API_TOKEN`), and either pair works.
+2. Under **Settings → Environment Variables**, add `PANGRAM_API_KEY`. You can also add `ADMIN_TOKEN` and `LEAF_SECRET` if you want them.
+3. Leave the framework preset on **Other** with no build command, then redeploy.
+
+Setting the Redis variables locally makes `npm start` use Redis too.
 
 ## Playing with the tree
 
