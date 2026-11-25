@@ -1,7 +1,7 @@
 import { createServer } from "node:http";
 import { readFile } from "node:fs/promises";
 import { extname, join, normalize } from "node:path";
-import { handleApi } from "./lib/tree.js";
+import { handleApi } from "./lib/score.js";
 
 const PORT = Number(process.env.PORT) || 3000;
 const PUBLIC_DIR = join(import.meta.dirname, "public");

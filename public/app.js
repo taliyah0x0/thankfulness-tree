@@ -1,5 +1,5 @@
 import { leafSvg, textBox, normalizeHand, toPixels, drawHand } from "./leaf-shape.js";
-import { clampPosition } from "./tree-layout.js";
+import { MAX_TREE, clampPosition, pickSpot } from "./tree-layout.js";
 import { randomIdea } from "./ideas.js";
 import { unlock, isMuted, setMuted, rustle, chime, pickUp, putDown, swish } from "./sound.js";
 
@@ -7,7 +7,6 @@ const VISION = "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@1.2.3";
 const HAND_MODEL = "https://storage.googleapis.com/mediapipe-models/hand_landmarker/hand_landmarker/float16/1/hand_landmarker.task";
 const FALL_COLORS = ["#e8742b", "#b8322f", "#f2b134", "#d2552b", "#a8572a", "#e39b2d"];
 const STOPS = [[0, [139, 117, 96]], [50, [242, 177, 52]], [100, [210, 64, 42]]];
-const TOKENS_KEY = "thankful-leaf-tokens";
 
 const $ = (id) => document.getElementById(id);
 const form = $("form"), input = $("gratitude"), submit = $("submit");
@@ -29,11 +28,7 @@ let suppressClick = false;
 let lastRustle = 0;
 let rendered = new Map();
 
-const params = new URLSearchParams(location.search);
-if (params.get("admin")) sessionStorage.setItem("thankful-admin", params.get("admin"));
-const adminToken = sessionStorage.getItem("thankful-admin");
-const tokens = JSON.parse(localStorage.getItem(TOKENS_KEY) || "{}");
-const saveTokens = () => localStorage.setItem(TOKENS_KEY, JSON.stringify(tokens));
+const MAX_PILE = 30;
 
 const hash = (s) => [...s].reduce((h, c) => (h * 31 + c.charCodeAt(0)) >>> 0, 7);
 const colorFor = ({ human }) => {
@@ -145,15 +140,13 @@ const buildLeaf = (leaf, onPile) => {
   }
   el.append(face);
 
-  if (tokens[leaf.id] || adminToken) {
-    const del = document.createElement("button");
-    del.type = "button";
-    del.className = "leaf-delete";
-    del.textContent = "×";
-    del.setAttribute("aria-label", `Remove the leaf "${leaf.gratitude}"`);
-    del.addEventListener("click", () => deleteLeaf(leaf));
-    el.append(del);
-  }
+  const del = document.createElement("button");
+  del.type = "button";
+  del.className = "leaf-delete";
+  del.textContent = "×";
+  del.setAttribute("aria-label", `Remove the leaf "${leaf.gratitude}"`);
+  del.addEventListener("click", () => deleteLeaf(leaf));
+  el.append(del);
   return el;
 };
 
@@ -229,35 +222,23 @@ const dropHeld = async () => {
   leaf.y = spot.y;
   rendered.set(leaf.id, { ...spot, fallen: false });
   putDown();
-  const res = await fetch(`/api/leaves/${leaf.id}/position`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(spot),
-  }).catch(() => null);
-  if (!res?.ok) loadLeaves().catch(() => {});
 };
 
-const loadLeaves = async (freshId) => {
-  const res = await fetch("/api/leaves");
-  leaves = await res.json();
-  for (const id of Object.keys(tokens)) if (!leaves.some((l) => l.id === id)) delete tokens[id];
-  saveTokens();
-  renderTree(freshId);
+const addLeaf = (leaf) => {
+  const onTree = leaves.filter((l) => !l.fallen);
+  const oldest = onTree.length >= MAX_TREE ? onTree[0].id : null;
+  const next = leaves.map((l) => (l.id === oldest ? { ...l, fallen: true, fallenAt: Date.now() } : l));
+  const added = { ...leaf, ...pickSpot(next.filter((l) => !l.fallen)) };
+  const pile = next.filter((l) => l.fallen).slice(-MAX_PILE);
+  leaves = [...pile, ...next.filter((l) => !l.fallen), added];
+  return added;
 };
 
-const deleteLeaf = async (leaf) => {
+const deleteLeaf = (leaf) => {
   if (!confirm(`Remove "${leaf.gratitude}" from the tree?`)) return;
   hidePopover();
-  const headers = tokens[leaf.id] ? { "x-delete-token": tokens[leaf.id] } : { "x-admin-token": adminToken };
-  const res = await fetch(`/api/leaves/${leaf.id}`, { method: "DELETE", headers });
-  if (!res.ok) {
-    const data = await res.json().catch(() => ({}));
-    alert(data.error || "Couldn't remove that leaf.");
-    return;
-  }
-  delete tokens[leaf.id];
-  saveTokens();
-  await loadLeaves();
+  leaves = leaves.filter((l) => l.id !== leaf.id);
+  renderTree();
 };
 
 const showPopover = (el, leaf) => {
@@ -616,23 +597,8 @@ hang.addEventListener("click", async () => {
   if (!pending) return;
   hang.disabled = true;
   showError("");
-  let leaf;
-  try {
-    const res = await fetch("/api/leaves", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ leaf: Object.fromEntries(Object.entries(pending).filter(([key]) => key !== "signature")), signature: pending.signature }),
-    });
-    leaf = await res.json();
-    if (!res.ok) throw new Error(leaf.error || "Something went wrong");
-  } catch (err) {
-    showError(err.message);
-    return;
-  } finally {
-    hang.disabled = false;
-  }
-  tokens[leaf.id] = leaf.deleteToken;
-  saveTokens();
+  const leaf = addLeaf(pending);
+  hang.disabled = false;
 
   const treeBox = $("tree").getBoundingClientRect();
   const { x, y } = leaf;
@@ -658,7 +624,7 @@ hang.addEventListener("click", async () => {
       ghost.remove();
       chime(leaf.human);
       rustle(0.4, 0.25);
-      loadLeaves(leaf.id);
+      renderTree(leaf.id);
     });
 
   pending = null;
@@ -682,8 +648,7 @@ const startFalling = () => {
 
 startFalling();
 updateSubmit();
-loadLeaves().catch(() => renderTree());
-setInterval(() => { if (popover.hidden && mode !== "play" && !held && !drag) loadLeaves().catch(() => {}); }, 20000);
+renderTree();
 
 treeEl.addEventListener("pointermove", (e) => {
   if (e.pointerType !== "mouse" || held || drag) return;
