@@ -13,6 +13,10 @@ No dependencies beyond Node 22+. The camera needs HTTPS (or localhost). Hand tra
 
 The Pangram key stays on the server. Leaves are saved to `data/leaves.json`. The tree holds 17 leaves; when a new one arrives, the oldest falls into a pile on the ground (the newest 30 fallen leaves are kept).
 
+## Scanning a written note
+
+**Or scan a written note** opens the camera on a paper note. **Snap and add to the tree** reads it with Tesseract.js OCR in the browser (best with neat, dark printing), strips a leading "I am thankful for", scores it with Pangram, and hangs it automatically on a classic leaf shape.
+
 ## Playing with the tree
 
 - Drag any leaf on the tree with the mouse (or a finger) to move it; the new spot is saved for everyone.

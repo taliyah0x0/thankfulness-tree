@@ -86,8 +86,11 @@ button.secondary:active { box-shadow: 0 1px 0 #f1cfa6; }
 button.link { background: none; box-shadow: none; color: var(--muted); font-size: 15px; padding: 4px 8px; text-decoration: underline; }
 button.link:active { transform: none; }
 
-.camera, .captured { width: 100%; display: flex; flex-direction: column; align-items: center; gap: 12px; }
-.camera[hidden], .captured[hidden] { display: none; }
+.camera, .captured, .scanner { width: 100%; display: flex; flex-direction: column; align-items: center; gap: 12px; }
+.camera[hidden], .captured[hidden], .scanner[hidden] { display: none; }
+.scan-link { display: block; margin: -6px auto 6px; }
+.cam-stage.scan-stage video { visibility: visible; transform: none; }
+.scan-frame { position: absolute; inset: 15% 5%; border: 3px dashed rgba(255, 255, 255, .9); border-radius: 12px; box-shadow: 0 0 0 999px rgba(74, 44, 26, .25); }
 .step-label { margin: 0; font-weight: 600; color: var(--bark); }
 .cam-stage {
   position: relative; width: 100%; aspect-ratio: 4 / 3; border-radius: 20px; overflow: hidden;

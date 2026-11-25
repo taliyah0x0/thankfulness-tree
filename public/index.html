@@ -33,6 +33,7 @@
         <label for="gratitude" class="prompt">I am thankful for</label>
         <textarea id="gratitude" name="gratitude" rows="4" maxlength="100" placeholder="write something!" required></textarea>
       </form>
+      <button type="button" class="link scan-link" id="scanOpen">Or scan a written note</button>
 
       <div class="preview">
         <div class="camera" id="camera">
@@ -41,9 +42,20 @@
             <video id="video" playsinline muted></video>
             <canvas id="overlay"></canvas>
             <div class="cam-progress"><span id="camProgress"></span></div>
-            <p class="cam-hint" id="camHint">Hold your palm up to the camera, fingers spread</p>
+            <p class="cam-hint" id="camHint">Hold your palm up to the camera</p>
           </div>
           <button type="button" id="camStart" class="secondary">Turn on camera</button>
+        </div>
+
+        <div class="scanner" id="scanner" hidden>
+          <p class="step-label">Hold your written note up to the camera</p>
+          <div class="cam-stage scan-stage">
+            <video id="scanVideo" playsinline muted></video>
+            <div class="scan-frame"></div>
+            <p class="cam-hint" id="scanHint">Fit the writing inside the frame</p>
+          </div>
+          <button type="button" id="snap">Snap and add to the tree</button>
+          <button type="button" class="link" id="scanCancel">Cancel</button>
         </div>
 
         <div class="captured" id="captured" hidden>

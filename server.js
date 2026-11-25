@@ -94,7 +94,7 @@ const scoreWithPangram = async (text) => {
 const handleScore = async (req, res) => {
   if (!API_KEY) return send(res, 503, { error: "The server is missing PANGRAM_API_KEY." });
   const { gratitude, shape } = await readBody(req);
-  if (!validShape(shape)) return send(res, 400, { error: "Capture your hand first so we can shape your leaf!" });
+  if (shape != null && !validShape(shape)) return send(res, 400, { error: "That hand shape didn't come through. Try capturing it again!" });
   const cleaned = String(gratitude ?? "").replace(/\s+/g, " ").trim().slice(0, 100);
   if (cleaned.length < 2) return send(res, 400, { error: "Tell us what you're thankful for first!" });
 
@@ -103,7 +103,7 @@ const handleScore = async (req, res) => {
     id: randomUUID(),
     gratitude: cleaned,
     ...score,
-    shape: { points: shape.points.map(([x, y]) => [Math.round(x * 10) / 10, Math.round(y * 10) / 10]), w: Math.round(shape.w * 10) / 10 },
+    shape: shape && { points: shape.points.map(([x, y]) => [Math.round(x * 10) / 10, Math.round(y * 10) / 10]), w: Math.round(shape.w * 10) / 10 },
     createdAt: Date.now(),
   };
   for (const [id, old] of pending) if (Date.now() - old.createdAt > PENDING_TTL_MS) pending.delete(id);
