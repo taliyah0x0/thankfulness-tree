@@ -4,6 +4,10 @@ Live: https://thankfulness-tree-oy7c43vpp-taliyah-s-projects.vercel.app/
 
 A cozy Thanksgiving web interactive. Visitors hold their palm up to the webcam, and MediaPipe hand tracking turns the hand's outline into their leaf shape. They finish the sentence "I am thankful for ___", [Pangram](https://www.pangram.com) scores how genuine (human-written) it sounds (which sets the leaf's color, from withered brown to bright red), and the leaf flies onto a shared tree. Hover or tap any leaf to read it and see its score.
 
+## Design
+
+The look of the tree was designed in [Paper](https://paper.design). See the design file: https://app.paper.design/file/01M885NE3CY1H9W5EM1WBNZT93
+
 ## Run it
 
 ```bash
