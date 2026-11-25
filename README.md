@@ -13,7 +13,7 @@ No dependencies beyond Node 22+. The camera needs HTTPS (or localhost). Hand tra
 
 The Pangram key stays on the server. Leaves are saved to `data/leaves.json`. The tree holds 17 leaves; when a new one arrives, the oldest falls into a pile on the ground (the newest 30 fallen leaves are kept).
 
-Stuck? **Give me an idea** types a random finish for the sentence into the box, mixed from a hand-written list of people and cozy moments.
+Stuck? **Give me an idea** types a random finish for the sentence into the box from a curated list of 15 answers, skipping any that are already on the tree.
 
 ## Playing with the tree
 

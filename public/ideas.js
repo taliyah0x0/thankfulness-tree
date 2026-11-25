@@ -1,47 +1,28 @@
-const PEOPLE = [
-  "my grandma", "my little brother", "my big sister", "my best friend", "my roommate", "my mom", "my dad",
-  "my dog", "my cat", "my neighbor", "my cousins", "my coworkers", "my partner", "my old teacher",
+const IDEAS = [
+  "the people who make ordinary days feel like home",
+  "second chances, and the people who gave them to me",
+  "a body that carries me through every day, even the hard ones",
+  "friends who check in when I've gone quiet",
+  "my morning coffee and the ten quiet minutes that come with it",
+  "a warm bed on a cold night",
+  "clean water, a full fridge, and a roof that doesn't leak",
+  "songs that show up at exactly the right moment",
+  "the hard seasons, because they showed me what I can get through",
+  "the lessons I didn't want but needed",
+  "how far I've come, even when it doesn't feel like much",
+  "stretchy pants, especially this week",
+  "whoever invented the nap",
+  "leftovers, the best part of any holiday",
+  "the mute button on group chats",
 ];
 
-const DEEDS = [
-  "who always saves me the last slice of pie",
-  "who texts me just to check in",
-  "who laughs at my terrible jokes",
-  "who still calls me by my childhood nickname",
-  "who taught me how to make gravy from scratch",
-  "who sits next to me when the house gets loud",
-  "who never lets me leave without leftovers",
-  "who shows up with soup when I'm sick",
-  "who remembers every story I tell",
-  "who drags me outside on sunny days",
-  "who sends me terrible memes at midnight",
-  "who makes every holiday feel like home",
-];
-
-const MOMENTS = [
-  "the first cold morning that calls for a big sweater",
-  "warm socks straight out of the dryer",
-  "the smell of cinnamon drifting out of the kitchen",
-  "crunchy leaves on the walk home",
-  "leftover turkey sandwiches at midnight",
-  "a long nap after a big dinner",
-  "the board game fight we have every single year",
-  "my favorite mug and a quiet morning",
-  "the group chat that never stops buzzing",
-  "the window seat on a rainy afternoon",
-  "second helpings of mashed potatoes",
-  "porch lights left on for late arrivals",
-  "the playlist my family argues about every car ride",
-  "pumpkin bread that never lasts more than a day",
-  "a good book and a blanket that's way too big",
-];
-
+const normalize = (text) => text.toLowerCase().replace(/\s+/g, " ").trim();
 let last = "";
 
-export const randomIdea = () => {
-  const pick = (list) => list[Math.floor(Math.random() * list.length)];
-  let idea = last;
-  while (idea === last) idea = Math.random() < 0.5 ? `${pick(PEOPLE)} ${pick(DEEDS)}` : pick(MOMENTS);
-  last = idea;
-  return idea;
+export const randomIdea = (taken = []) => {
+  const used = new Set(taken.map(normalize));
+  const fresh = IDEAS.filter((idea) => !used.has(normalize(idea)) && idea !== last);
+  const pool = fresh.length ? fresh : IDEAS.filter((idea) => idea !== last);
+  last = pool[Math.floor(Math.random() * pool.length)];
+  return last;
 };

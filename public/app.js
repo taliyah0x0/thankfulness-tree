@@ -556,7 +556,7 @@ playToggle.addEventListener("click", async () => {
 
 let typing = 0;
 $("idea").addEventListener("click", () => {
-  const idea = randomIdea();
+  const idea = randomIdea(leaves.filter((l) => !l.fallen).map((l) => l.gratitude));
   const run = ++typing;
   input.value = "";
   [...idea].forEach((ch, i) => setTimeout(() => {
