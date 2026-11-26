@@ -3,6 +3,7 @@ import { MAX_TREE, clampPosition, pickSpot } from "./tree-layout.js";
 import { randomIdea } from "./ideas.js";
 import { unlock, isMuted, setMuted, rustle, chime, pickUp, putDown, swish } from "./sound.js";
 import { connect, makeCode, cleanCode, CODE_LENGTH } from "./room.js";
+import { MAX_LEAVES, MAX_REMOVED, num, str, cleanLeaf, isNewer, settle } from "./tree-sync.js";
 
 const VISION = "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@1.2.3";
 const HAND_MODEL = "https://storage.googleapis.com/mediapipe-models/hand_landmarker/hand_landmarker/float16/1/hand_landmarker.task";
@@ -35,61 +36,15 @@ const landing = new Set();
 const remoteHeld = new Map();
 const remoteHands = new Map();
 
-const MAX_PILE = 30;
-const MAX_LEAVES = MAX_TREE + MAX_PILE;
 const HELD_TIMEOUT = 1500;
 const PEER_COLORS = ["#2f7d6d", "#5a5fc4", "#c2408a", "#2d7fb8", "#7a8f1f", "#9b4fd1"];
 
 const hash = (s) => [...s].reduce((h, c) => (h * 31 + c.charCodeAt(0)) >>> 0, 7);
 const peerColor = (peerId) => PEER_COLORS[hash(peerId) % PEER_COLORS.length];
 
-const num = (n, lo, hi) => Number.isFinite(n) && n >= lo && n <= hi;
-const str = (s, max) => typeof s === "string" && s.length <= max;
-const validShape = (shape) =>
-  Array.isArray(shape?.points) &&
-  shape.points.length === 21 &&
-  shape.points.every((p) => Array.isArray(p) && p.length === 2 && p.every((n) => num(n, -20, 140))) &&
-  num(shape.w, 0.01, 40);
-
-// Leaves from other people arrive over the network, so only accept well-formed ones.
-const cleanLeaf = (l) => {
-  if (!l || !str(l.id, 64) || !l.id || !str(l.gratitude, 100) || !num(l.human, 0, 100) || !validShape(l.shape)) return null;
-  if (!num(l.createdAt, 0, 1e14) || !num(l.v, 0, 1e14) || !str(l.by, 64)) return null;
-  const spot = clampPosition(Number(l.x) || 50, Number(l.y) || 30);
-  return {
-    id: l.id,
-    gratitude: l.gratitude,
-    human: Math.round(l.human),
-    headline: str(l.headline, 200) ? l.headline : null,
-    confidence: str(l.confidence, 40) ? l.confidence : null,
-    shape: { points: l.shape.points.map(([x, y]) => [x, y]), w: l.shape.w },
-    createdAt: l.createdAt,
-    x: spot.x,
-    y: spot.y,
-    fallen: l.fallen === true,
-    fallenAt: num(l.fallenAt, 0, 1e14) ? l.fallenAt : 0,
-    v: l.v,
-    by: l.by,
-  };
-};
-
-// Every change bumps a leaf's version; the newest version of each leaf wins everywhere.
 const stamp = (leaf) => Object.assign(leaf, { v: Date.now(), by: room?.selfId ?? "me" });
-const isNewer = (a, b) => a.v > b.v || (a.v === b.v && a.by > b.by);
-
-// Order by age, then let the oldest leaves fall off a full tree and trim the pile.
-// Every peer runs this on the same leaves, so they all land on the same tree.
 const normalize = () => {
-  leaves.sort((a, b) => a.createdAt - b.createdAt || (a.id < b.id ? -1 : 1));
-  const onTree = leaves.filter((l) => !l.fallen);
-  const newest = onTree.at(-1);
-  for (const leaf of onTree.slice(0, Math.max(0, onTree.length - MAX_TREE))) {
-    leaf.fallen = true;
-    leaf.fallenAt = newest.createdAt;
-  }
-  const pile = leaves.filter((l) => l.fallen).sort((a, b) => a.fallenAt - b.fallenAt);
-  const dropped = new Set(pile.slice(0, Math.max(0, pile.length - MAX_PILE)).map((l) => l.id));
-  if (dropped.size) leaves = leaves.filter((l) => !dropped.has(l.id));
+  leaves = settle(leaves);
 };
 
 const isRemotelyHeld = (id) => {
@@ -299,6 +254,7 @@ const dropHeld = async () => {
     Object.assign(current, spot);
     stamp(current);
     room?.upsert([current]);
+    saveRoomSoon();
   }
   rendered.set(leaf.id, { ...spot, fallen: false });
   putDown();
@@ -310,6 +266,7 @@ const addLeaf = (leaf) => {
   leaves.push(added);
   normalize();
   room?.upsert([added]);
+  saveRoomSoon();
   return added;
 };
 
@@ -319,6 +276,7 @@ const deleteLeaf = (leaf) => {
   removed.add(leaf.id);
   leaves = leaves.filter((l) => l.id !== leaf.id);
   room?.remove(leaf.id);
+  saveRoomSoon();
   renderTree();
 };
 
@@ -431,6 +389,7 @@ handlers.capture = (lm, now) => {
   camHint.textContent = !open ? "Spread your fingers wide" : progress > 0 ? "Hold still..." : "Hold still to capture";
   if (progress < 1) return;
   handShape = normalizeHand(pts);
+  chime(100);
   stopCamera();
   camera.hidden = true;
   captured.hidden = false;
@@ -864,7 +823,7 @@ const wakePeers = () => {
 const point = (p) => Array.isArray(p) && p.length === 2 && p.every((n) => num(n, 0, 1));
 
 const roomHandlers = {
-  snapshot: () => ({ leaves, removed: [...removed].slice(-500) }),
+  snapshot: () => ({ leaves, removed: [...removed].slice(-MAX_REMOVED) }),
   onSync: (data) => {
     for (const id of (Array.isArray(data?.removed) ? data.removed : []).slice(0, 500)) {
       if (!str(id, 64)) continue;
@@ -939,8 +898,48 @@ const setRoomParam = (code) => {
   history.replaceState(null, "", url);
 };
 
+// The room's tree is also saved on the server, so it is still there after everyone leaves.
+// Whoever makes a change saves it; the server merges saves with the same rules peers use.
+let saveTimer = null;
+const saveRoom = (keepalive = false) => {
+  clearTimeout(saveTimer);
+  saveTimer = null;
+  if (!room) return;
+  const code = room.code;
+  fetch("/api/room", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ code, ...roomHandlers.snapshot() }),
+    keepalive,
+  })
+    .then((res) => (res.ok ? res.json() : Promise.reject(new Error(`save failed (${res.status})`))))
+    .then((saved) => room?.code === code && roomHandlers.onSync(saved))
+    .catch((err) => console.warn("Couldn't save the room's tree", err));
+};
+const saveRoomSoon = () => {
+  if (!room) return;
+  clearTimeout(saveTimer);
+  saveTimer = setTimeout(saveRoom, 600);
+};
+const flushRoomSave = () => saveTimer && saveRoom(true);
+addEventListener("pagehide", flushRoomSave);
+
+const loadSavedRoom = async (code) => {
+  try {
+    const res = await fetch(`/api/room?code=${encodeURIComponent(code)}`);
+    if (!res.ok) throw new Error(`load failed (${res.status})`);
+    if (room?.code === code) roomHandlers.onSync(await res.json());
+    return true;
+  } catch (err) {
+    console.warn("Couldn't load the room's saved tree", err);
+    setRoomStatus("Couldn't load this room's saved leaves, but you're connected live.");
+    return false;
+  }
+};
+
 const leaveRoom = () => {
   if (!room) return;
+  flushRoomSave();
   shareHand(null);
   room.leave();
   room = null;
@@ -974,7 +973,9 @@ const enterRoom = async (code, { bringLeaves }) => {
     renderPeople(room.peers());
     roomSolo.hidden = true;
     roomLive.hidden = false;
-    setRoomStatus("");
+    setRoomStatus("Loading the room's tree...");
+    if (await loadSavedRoom(code)) setRoomStatus("");
+    if (bringLeaves) saveRoomSoon();
   } catch (err) {
     console.error(err);
     room = null;

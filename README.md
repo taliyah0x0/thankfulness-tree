@@ -17,7 +17,7 @@ npm start              # http://localhost:3000
 
 No dependencies beyond Node 22+. The camera needs HTTPS (or localhost). Hand tracking runs entirely in the browser, and no video leaves the device; only the 21 hand points that make the leaf shape are sent to the server.
 
-The Pangram key stays on the server, which only scores sentences. Leaves are never saved: each visitor's tree lives in their browser tab and starts empty again on reload. The tree holds 17 leaves; when a new one arrives, the oldest falls into a pile on the ground (the newest 30 fallen leaves are kept).
+The Pangram key stays on the server. Outside a room, leaves are never saved: each visitor's tree lives in their browser tab and starts empty again on reload. The tree holds 17 leaves; when a new one arrives, the oldest falls into a pile on the ground (the newest 30 fallen leaves are kept).
 
 Stuck? **Give me an idea** types a random finish for the sentence into the box from a curated list of 15 answers, skipping any that are already on the tree.
 
@@ -25,11 +25,19 @@ Stuck? **Give me an idea** types a random finish for the sentence into the box f
 
 **Make a room** creates a 5-character code, and friends join by typing it in or opening the invite link (`/?room=CODE`). Everyone in a room shares one tree in real time: new leaves, where leaves sit, live drags, deletions, tree shakes, and each person's webcam hand (their fingertips and pinch cursor show up on everyone's tree in their own color). If you make a room, your current leaves come with you. If you join one, you start from the room's tree.
 
-Peers connect directly over WebRTC using [Trystero](https://github.com/dmotz/trystero), which uses public Nostr relays only to help them find each other. No server or account is needed, so it works on Vercel as-is. As with solo play, nothing is saved: a room's tree lasts as long as someone has it open. Webcam video never leaves your browser; only hand points are shared.
+Live updates go directly between browsers over WebRTC using [Trystero](https://github.com/dmotz/trystero), which uses public Nostr relays only to help peers find each other. Webcam video never leaves your browser; only hand points are shared.
+
+Rooms are also saved on the server, so a room's tree is still there after everyone closes the tab. Whoever makes a change (a new leaf, a move, a delete) saves the room through `/api/room`, and the server merges it using the same rules peers use (`public/tree-sync.js`). Joining a room loads the saved tree first. Saved rooms expire after 90 days without changes. Solo trees (outside a room) still aren't saved.
 
 ## Deploy to Vercel
 
-The site deploys as static files from `public/` plus one Vercel function (`api/index.js`) that handles Pangram scoring. Add `PANGRAM_API_KEY` under **Settings → Environment Variables** and deploy; nothing else is needed.
+The site deploys as static files from `public/` plus one Vercel function (`api/index.js`) that handles Pangram scoring and saved rooms. Vercel functions can't keep files, so rooms are saved in Upstash Redis.
+
+1. In the Vercel project, open **Storage** (or the Marketplace), add **Upstash Redis**, and connect it to the project. That sets `KV_REST_API_URL`/`KV_REST_API_TOKEN` (or `UPSTASH_REDIS_REST_URL`/`UPSTASH_REDIS_REST_TOKEN`); either pair works.
+2. Under **Settings → Environment Variables**, add `PANGRAM_API_KEY`.
+3. Redeploy.
+
+Locally, `npm start` saves rooms to `data/rooms.json` unless the Redis variables are set in `.env`.
 
 ## Playing with the tree
 
