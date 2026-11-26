@@ -1,0 +1,128 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>The Thankfulness Tree</title>
+  <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Caveat:wght@500;700&family=Fredoka:wght@400;500;600;700&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <div class="sky" aria-hidden="true"><div class="stars"></div><div class="orb"></div></div>
+  <div class="falling" aria-hidden="true"></div>
+
+  <header>
+    <div class="toolbar">
+      <div class="sky-switch" role="group" aria-label="Sky">
+        <button type="button" data-sky-option="day">Day</button>
+        <button type="button" data-sky-option="sunset">Sunset</button>
+        <button type="button" data-sky-option="night">Night</button>
+      </div>
+      <button type="button" id="soundToggle" class="secondary small">Sound on</button>
+    </div>
+    <p class="eyebrow">Happy Thanksgiving</p>
+    <h1>The Thankfulness Tree</h1>
+    <p class="sub">Write what you're grateful for. Pangram checks it sounds like a real human wrote it, then your leaf joins the tree. Drag leaves around or wiggle your cursor to rustle the tree.</p>
+  </header>
+
+  <main>
+    <section class="maker">
+      <form id="form" autocomplete="off">
+        <label for="gratitude" class="prompt">I am thankful for</label>
+        <textarea id="gratitude" name="gratitude" rows="4" maxlength="100" placeholder="write something!" required></textarea>
+      </form>
+      <button type="button" class="link idea-link" id="idea">Give me an idea</button>
+
+      <div class="preview">
+        <div class="camera" id="camera">
+          <p class="step-label">Shape your leaf with your hand</p>
+          <div class="cam-stage">
+            <video id="video" playsinline muted></video>
+            <canvas id="overlay"></canvas>
+            <div class="cam-progress"><span id="camProgress"></span></div>
+            <p class="cam-hint" id="camHint">Hold your palm up to the camera</p>
+          </div>
+          <button type="button" id="camStart" class="secondary">Turn on camera</button>
+        </div>
+
+        <div class="captured" id="captured" hidden>
+          <div class="big-leaf" id="bigLeaf"></div>
+          <button type="button" class="link" id="retake">Retake hand</button>
+        </div>
+
+        <button type="submit" form="form" id="submit" disabled hidden>Grow a leaf</button>
+
+        <div class="result" id="result" hidden>
+          <div class="score"><span id="scoreNum">0</span><small>% genuine</small></div>
+          <p class="verdict" id="verdict"></p>
+          <p class="meta" id="meta"></p>
+          <button type="button" id="hang">Hang it on the tree</button>
+        </div>
+        <p class="error" id="error" hidden></p>
+      </div>
+    </section>
+
+    <section class="tree-wrap">
+      <div class="room-bar">
+        <div class="room-solo" id="roomSolo">
+          <button type="button" id="roomCreate" class="secondary small">Make a room</button>
+          <span class="room-or">or</span>
+          <form id="roomJoin" class="room-join" autocomplete="off">
+            <input id="roomCode" maxlength="8" placeholder="CODE" aria-label="Room code" spellcheck="false" autocapitalize="characters" />
+            <button type="submit" class="secondary small">Join</button>
+          </form>
+        </div>
+        <div class="room-live" id="roomLive" hidden>
+          <span class="room-name">Room <b id="roomName"></b></span>
+          <span class="room-people" id="roomPeople"></span>
+          <button type="button" id="roomCopy" class="link">Copy invite link</button>
+          <button type="button" id="roomLeave" class="link">Leave</button>
+        </div>
+        <p class="room-status" id="roomStatus" hidden></p>
+      </div>
+      <p class="count" id="count">0 leaves of gratitude</p>
+      <div class="legend"><span>robotic</span><i></i><span>genuine</span></div>
+      <div class="play-bar">
+        <button type="button" id="playToggle" class="secondary small">Play with the tree</button>
+      </div>
+      <div class="pip" id="pip" hidden>
+        <video id="pipVideo" playsinline muted></video>
+        <canvas id="pipCanvas"></canvas>
+        <p>Wave fast to shake the tree. Pinch a leaf to pick it up, and open your fingers to place it.</p>
+      </div>
+      <div class="tree" id="tree">
+        <svg viewBox="0 0 600 600" aria-hidden="true">
+          <ellipse cx="300" cy="592" rx="230" ry="22" class="ground" />
+          <g class="branches">
+            <path d="M295 400 C250 360 200 330 150 300" stroke-width="16" />
+            <path d="M305 390 C350 350 410 330 460 290" stroke-width="16" />
+            <path d="M300 340 C290 280 300 220 300 150" stroke-width="16" />
+            <path d="M292 365 C240 300 205 250 185 180" stroke-width="11" />
+            <path d="M308 365 C360 300 400 250 420 185" stroke-width="11" />
+            <path d="M150 300 C130 282 110 272 88 270" stroke-width="7" />
+            <path d="M460 290 C485 272 505 266 522 263" stroke-width="7" />
+            <path d="M300 232 C272 204 252 174 242 130" stroke-width="7" />
+            <path d="M300 232 C328 204 348 174 360 130" stroke-width="7" />
+            <path d="M210 335 C196 360 180 372 160 378" stroke-width="6" />
+            <path d="M392 330 C408 356 424 368 446 374" stroke-width="6" />
+          </g>
+          <path class="trunk" d="M255 600 C276 520 282 430 293 300 Q300 290 307 300 C318 430 324 520 345 600 Z" />
+          <path class="bark" d="M292 560 C296 500 293 450 296 400 M308 520 C305 470 309 430 306 380" />
+        </svg>
+        <div class="pile" id="pile"></div>
+        <div class="leaves" id="leaves"></div>
+        <canvas class="hand-layer" id="peerLayer"></canvas>
+        <canvas class="hand-layer" id="handLayer"></canvas>
+        <p class="empty" id="empty">The tree is waiting for its first leaf.</p>
+      </div>
+      <div class="popover" id="popover" hidden></div>
+    </section>
+  </main>
+
+  <footer>Humanness scores by <a href="https://www.pangram.com" target="_blank" rel="noopener">Pangram</a></footer>
+  <script type="module" src="app.js"></script>
+</body>
+</html>

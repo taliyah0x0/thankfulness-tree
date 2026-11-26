@@ -1,0 +1,13 @@
+{
+  "name": "thankfulness-tree",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "start": "node --env-file-if-exists=.env server.js",
+    "build": "echo \"Static site in public/, nothing to build\""
+  },
+  "engines": {
+    "node": ">=22"
+  }
+}
